@@ -1,0 +1,33 @@
+package io.github.fakegeo.hook;
+
+import android.location.Location;
+import android.os.SystemClock;
+import io.github.fakegeo.config.Profile;
+
+final class LocationFactory {
+    private LocationFactory() {}
+    static Location create(Profile profile, String provider) {
+        Location result = new Location(provider == null ? "gps" : provider);
+        apply(result, profile);
+        result.setTime(System.currentTimeMillis());
+        result.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+        return result;
+    }
+    static Location copy(Location source, Profile profile) {
+        Location result = new Location(source);
+        apply(result, profile);
+        return result;
+    }
+    private static void apply(Location result, Profile profile) {
+        io.github.fakegeo.motion.MotionModel.Sample sample=io.github.fakegeo.motion.MotionModel.sample(profile,SystemClock.elapsedRealtime(),System.currentTimeMillis());
+        result.setLatitude(sample.latitude); result.setLongitude(sample.longitude);
+        result.setAltitude(sample.altitude); result.setAccuracy(sample.accuracy);
+        result.setSpeed(sample.speed); result.setBearing(sample.bearing);
+        result.setVerticalAccuracyMeters(sample.accuracy);
+        result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
+        result.setExtras(null);
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            result.removeMslAltitude(); result.removeMslAltitudeAccuracy();
+        }
+    }
+}

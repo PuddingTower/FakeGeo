@@ -1,0 +1,29 @@
+plugins { id 'com.android.application' }
+def localSettings = new Properties()
+def localSettingsFile = rootProject.file('local.properties')
+if (localSettingsFile.exists()) localSettingsFile.withInputStream { localSettings.load(it) }
+android {
+    namespace 'io.github.fakegeo'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.github.fakegeo'
+        minSdk 29
+        targetSdk 35
+        versionCode 15
+        versionName '0.3.7'
+        testInstrumentationRunner 'io.github.fakegeo.motion.MotionInstrumentation'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    signingConfigs {
+        debug {
+            if (localSettings.getProperty('fakegeo.debug.keystore')) storeFile file(localSettings.getProperty('fakegeo.debug.keystore'))
+        }
+    }
+    buildTypes { release { minifyEnabled false } }
+}
+dependencies {
+    implementation 'com.amap.api:3dmap-location-search:11.2.100_loc11.2.100_sea9.8.1'
+    compileOnly 'de.robv.android.xposed:api:82'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

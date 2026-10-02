@@ -1,0 +1,6 @@
+# Copy to local.properties and set your Android SDK directory.
+# local.properties is private and excluded from Git and source exports.
+sdk.dir=/path/to/android/sdk
+
+# Optional: reuse your own debug signing key. Never commit the key itself.
+# fakegeo.debug.keystore=/path/to/your/debug.keystore
