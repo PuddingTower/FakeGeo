@@ -63,6 +63,13 @@ def check(names):
         path.resolve().relative_to(ROOT)
         if name == "gradle/wrapper/gradle-wrapper.jar":
             continue  # Required Gradle Wrapper binary; no generated APK/JAR outputs.
+        if name == "Screenshot.jpg":
+            # Explicitly approved public showcase; other new binary files still
+            # need review. Strip personal EXIF/XMP metadata before exporting.
+            data = path.read_bytes()
+            if not data.startswith(b"\xff\xd8") or b"Exif\0\0" in data or b"http://ns.adobe.com/xap/1.0/" in data:
+                issues.append((name, 0, "review showcase image metadata"))
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeError:

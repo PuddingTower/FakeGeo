@@ -20,12 +20,23 @@ public final class Profile {
     public final boolean jitter;
     public final double jitterMeters, motionSpeed, motionInitialSpeed, motionBearing;
     public final long motionElapsed, motionWall, motionLease;
+    public final int motionMode;
+    public final long motionSeed;
+    public final boolean sensors;
+    public final Set<String> sensorTargets;
 
     public Profile(JSONObject json) {
         enabled = json.optBoolean("enabled", false);
         systemMode = json.optBoolean("systemMode", true);
         gnss = json.optBoolean("gnss", false);
         jitter = json.optBoolean("jitter", true);
+        sensors = json.optBoolean("sensors", false);
+        sensorTargets = Collections.unmodifiableSet(Validation.packages(json.optString("sensorTargets", "")));
+        double mode = Validation.number(json.optString("motionMode", "0"), 0, 2, "移动模式");
+        if (mode != Math.floor(mode)) throw new IllegalArgumentException("移动模式必须是整数");
+        motionMode = (int) mode;
+        motionSeed = json.optLong("motionSeed", 1);
+        if (motionSeed < 0) throw new IllegalArgumentException("运动种子无效");
         jitterMeters = Validation.number(json.optString("jitterMeters", "2"), 0, 30, "定位漂移半径（米）");
         motionSpeed = Validation.number(json.optString("motionSpeed", "0"), 0, 20, "移动速度（米／秒）");
         motionInitialSpeed = Validation.number(json.optString("motionInitialSpeed", "0"), 0, 20, "初始移动速度");
@@ -75,6 +86,8 @@ public final class Profile {
             j.put("motionSpeed", motionSpeed); j.put("motionInitialSpeed", motionInitialSpeed);
             j.put("motionBearing", motionBearing); j.put("motionElapsed", motionElapsed);
             j.put("motionWall", motionWall); j.put("motionLease", motionLease);
+            j.put("motionMode", motionMode); j.put("motionSeed", motionSeed);
+            j.put("sensors", sensors); j.put("sensorTargets", String.join("\n", sensorTargets));
             j.put("locationCacheTarget", locationCacheTarget);
             j.put("bluetooth", bluetooth); j.put("cell", cell);
             j.put("latitude", latitude); j.put("longitude", longitude); j.put("altitude", altitude);

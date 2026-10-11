@@ -9,8 +9,8 @@ android {
         applicationId 'io.github.fakegeo'
         minSdk 29
         targetSdk 35
-        versionCode 15
-        versionName '0.3.7'
+        versionCode 17
+        versionName '0.3.9'
         testInstrumentationRunner 'io.github.fakegeo.motion.MotionInstrumentation'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

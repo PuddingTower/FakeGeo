@@ -50,6 +50,10 @@ google-services.json
 /private/
 /screenshots/
 Screenshot_*
+Screenshot.*
+screenshot.*
+# Public project showcase, intentionally supplied by the author
+!/Screenshot.jpg
 /profile.json
 /status.json
 **/shared_prefs/

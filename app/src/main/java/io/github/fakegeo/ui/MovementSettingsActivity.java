@@ -9,6 +9,15 @@ import android.provider.Settings;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.CheckBox;
+import android.widget.Toast;
+import android.content.pm.ApplicationInfo;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import io.github.fakegeo.config.ConfigStore;
 import io.github.fakegeo.config.Profile;
 import io.github.fakegeo.motion.JoystickService;
@@ -16,6 +25,12 @@ import io.github.fakegeo.motion.JoystickService;
 public final class MovementSettingsActivity extends Activity {
     private TextView state;
     private Button start;
+    private Button applySensors;
+    private CheckBox sensors;
+    private TextView sensorSelection;
+    private final Set<String> sensorTargets=new LinkedHashSet<>();
+    private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private boolean applying;
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setBackgroundColor(UiKit.BACKGROUND);
@@ -23,7 +38,7 @@ public final class MovementSettingsActivity extends Activity {
         android.widget.ScrollView scroll=new android.widget.ScrollView(this);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(24),dp(20),dp(24),dp(24));scroll.addView(body);
         body.addView(UiKit.text(this,"用摇杆控制方向",23,UiKit.INK,true));
-        TextView help=UiKit.text(this,"上北下南左西右东，松手即停。\n走路 1–7 km/h · 跑步 5–18 km/h · 骑车 6–45 km/h\n速度滑条设置目标速度，摇杆推得越远移动越快；加入平滑加速和速度波动。",14,UiKit.MUTED,false);
+        TextView help=UiKit.text(this,"上北下南左西右东，未锁定时松手即停。\n悬浮窗默认收起模式、速度和传感器选项，点击“设置”展开。点击“方向锁定”后推动摇杆，松手保持方向和推力；可再次推动调整方向，点击“暂停”或解除锁定停止。\n走路 1–7 km/h · 跑步 5–18 km/h · 骑车 6–45 km/h\n速度滑条设置目标速度，摇杆推得越远移动越快。锁定移动时可以直接调速。走路和跑步包含平滑起步、缓慢快慢变化与短时节奏变化，每次移动节奏不同。",14,UiKit.MUTED,false);
         help.setPadding(0,dp(16),0,dp(16));help.setLineSpacing(dp(5),1);body.addView(help);
         state=UiKit.text(this,"",14,UiKit.ACCENT,true);body.addView(state);
         Button grant=UiKit.button(this,"授权显示悬浮窗",false);body.addView(grant,buttonParams());
@@ -33,6 +48,17 @@ public final class MovementSettingsActivity extends Activity {
             notification.setOnClickListener(v->requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},35));
         }
         start=UiKit.button(this,"打开悬浮摇杆",true);body.addView(start,buttonParams());start.setOnClickListener(v->toggle());
+        TextView sensorTitle=UiKit.text(this,"运动传感器模拟",19,UiKit.INK,true);sensorTitle.setPadding(0,dp(24),0,dp(8));body.addView(sensorTitle);
+        Profile profile=ConfigStore.load(this);
+        sensorTargets.addAll(saved==null?profile.sensorTargets:io.github.fakegeo.config.Validation.packages(saved.getString("sensorTargets","")));
+        sensors=new CheckBox(this);sensors.setText("启用走路／跑步传感器模拟");sensors.setTextColor(UiKit.INK);
+        sensors.setButtonTintList(android.content.res.ColorStateList.valueOf(UiKit.ACCENT));
+        sensors.setChecked(saved==null?profile.sensors:saved.getBoolean("sensors",false));body.addView(sensors);
+        sensorSelection=UiKit.text(this,"",13,UiKit.MUTED,false);body.addView(sensorSelection);refreshSensorSelection();
+        Button chooseSensors=UiKit.button(this,"选择传感器模拟应用",false);body.addView(chooseSensors,buttonParams());chooseSensors.setOnClickListener(v->chooseSensorApps());
+        applySensors=UiKit.button(this,"应用传感器设置",false);body.addView(applySensors,buttonParams());applySensors.setOnClickListener(v->applySensorSettings());
+        TextView sensorHelp=UiKit.text(this,"模拟加速度、陀螺仪、重力、线性加速度、步数和步伐检测，步频随当前速度变化。暂停或未锁定松手后停止增加步数，锁定移动时继续模拟步伐；骑车模式不模拟步伐。关闭模拟后恢复真实采样，已发送的模拟步数会保留在当前应用进程的累计值中；重启目标应用后重新读取原始累计步数。\n\n在此选择应用后，还需在 LSPosed 的 FakeGeo 作用域勾选相同应用并重启该应用。步数接口需要目标应用已获“身体活动”权限。应用设置会暂停当前移动，需要重新打开摇杆；悬浮窗内可快速开关。仅支持设备已有的标准 Android 传感器监听，不覆盖原生直连或外部运动设备。部分 App 仍可能不计距离。",13,UiKit.MUTED,false);
+        sensorHelp.setPadding(0,dp(12),0,0);sensorHelp.setLineSpacing(dp(5),1);body.addView(sensorHelp);
         TextView note=UiKit.text(this,"请先开启系统虚拟定位。拖动窗口标题可以调整位置，暂停或关闭只停止移动，保留虚拟定位。锁屏暂停；从最近任务移除软件会关闭控制窗。服务失去响应时，运动指令最多 6 秒后停止。\n\n小幅定位漂移默认开启，可在高级设置调整半径。升级系统 Hook 后需重启手机。",13,UiKit.MUTED,false);
         note.setPadding(0,dp(20),0,0);note.setLineSpacing(dp(5),1);body.addView(note);
         setContentView(page);UiKit.insetPage(page);
@@ -56,6 +82,46 @@ public final class MovementSettingsActivity extends Activity {
         boolean allowed=Settings.canDrawOverlays(this),running=JoystickService.isRunning();
         state.setText(running?"● 悬浮摇杆已打开":allowed?"悬浮窗权限已就绪":"尚未授权悬浮窗权限");start.setText(running?"关闭悬浮摇杆":"打开悬浮摇杆");
     }
+    private void chooseSensorApps() {
+        ArrayList<ApplicationInfo> apps=new ArrayList<>();
+        for(ApplicationInfo app:getPackageManager().getInstalledApplications(0))
+            if((app.flags&(ApplicationInfo.FLAG_SYSTEM|ApplicationInfo.FLAG_UPDATED_SYSTEM_APP))==0 && !app.packageName.equals(getPackageName())) apps.add(app);
+        apps.sort(Comparator.comparing(a->getPackageManager().getApplicationLabel(a).toString()));
+        CharSequence[] labels=new CharSequence[apps.size()];boolean[] selected=new boolean[apps.size()];
+        for(int i=0;i<apps.size();i++) { labels[i]=getPackageManager().getApplicationLabel(apps.get(i))+"\n"+apps.get(i).packageName;selected[i]=sensorTargets.contains(apps.get(i).packageName); }
+        new AlertDialog.Builder(this).setTitle("选择传感器模拟应用").setMultiChoiceItems(labels,selected,(dialog,index,checked)->selected[index]=checked)
+                .setPositiveButton("使用选择",(dialog,which)->{
+                    sensorTargets.clear();for(int i=0;i<selected.length;i++) if(selected[i]) sensorTargets.add(apps.get(i).packageName);
+                    refreshSensorSelection();
+                }).setNegativeButton("取消",null).show();
+    }
+    private void refreshSensorSelection() {
+        sensorSelection.setText(sensorTargets.isEmpty()?"尚未选择应用":"已选择 "+sensorTargets.size()+" 个应用\n"+String.join("\n",sensorTargets));
+    }
+    private void applySensorSettings() {
+        if(applying) return;
+        if(sensors.isChecked() && sensorTargets.isEmpty()) { Toast.makeText(this,"请先选择传感器模拟应用",Toast.LENGTH_LONG).show();return; }
+        try {
+            org.json.JSONObject json=ConfigStore.published(this).json().put("sensors",sensors.isChecked()).put("sensorTargets",String.join("\n",sensorTargets));
+            Profile next=new Profile(json);applying=true;applySensors.setEnabled(false);start.setEnabled(false);
+            worker.execute(()->{
+                Exception error=null;
+                try { io.github.fakegeo.root.RootProfilePublisher.publishUser(this,next);stopService(new Intent(this,JoystickService.class)); }
+                catch(Exception failure) { error=failure; }
+                Exception outcome=error;
+                runOnUiThread(()->{
+                    if(isDestroyed()) return;
+                    applying=false;applySensors.setEnabled(true);start.setEnabled(true);refresh();
+                    if(outcome==null) Toast.makeText(this,"设置已应用，请确认 LSPosed 勾选相同应用；首次勾选后重启目标应用",Toast.LENGTH_LONG).show();
+                    else new AlertDialog.Builder(this).setTitle("传感器设置未应用").setMessage(outcome.getMessage()).setPositiveButton("知道了",null).show();
+                });
+            });
+        } catch(Exception error) { Toast.makeText(this,error.getMessage(),Toast.LENGTH_LONG).show(); }
+    }
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putString("sensorTargets",String.join("\n",sensorTargets));state.putBoolean("sensors",sensors.isChecked());super.onSaveInstanceState(state);
+    }
+    @Override protected void onDestroy() { worker.shutdown();super.onDestroy(); }
     @Override protected void onResume() { super.onResume();refresh(); }
     private LinearLayout.LayoutParams buttonParams() { LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(50));p.topMargin=dp(12);return p; }
     private int dp(int value) { return UiKit.dp(this,value); }

@@ -51,7 +51,7 @@ public class RuntimeGateTest {
         current.put("wifiConnectivityProtected", true); RuntimeGate.requireWifiConnectivity(current);
     }
     @Test public void motionNeedsNewSystemCodeRatherThanThePreviousUiOnlyVersion() throws Exception {
-        for(String version:new String[]{"0.3.1","0.3.4"}) {
+        for(String version:new String[]{"0.3.1","0.3.4","0.3.6","0.3.7"}) {
             JSONObject status=new JSONObject().put("moduleVersion",version).put("reportedAt",100000);
             assertThrows(IllegalStateException.class,()->RuntimeGate.requireCurrent(status,100001));
         }

@@ -30,12 +30,12 @@ public final class MotionModel {
             int count=24; double h=seconds/count, distance=0;
             for (int i=0;i<=count;i++) {
                 double t=i*h;
-                distance+=(i==0 || i==count?1:i%2==0?2:4)*baseSpeed(p,t)*factor(start+t);
+                distance+=(i==0 || i==count?1:i%2==0?2:4)*baseSpeed(p,t)*NaturalPace.factor(p.motionMode,p.motionSeed,start+t);
             }
             distance*=h/3;
             double[] point=offset(lat,lon,distance*Math.sin(Math.toRadians(p.motionBearing)),distance*Math.cos(Math.toRadians(p.motionBearing)));
             lat=point[0]; lon=point[1]; bearing=p.motionBearing%360;
-            if (age<p.motionLease) { base=baseSpeed(p,seconds); speed=base*factor(start+seconds); }
+            if (age<p.motionLease) { base=baseSpeed(p,seconds); speed=base*NaturalPace.factor(p.motionMode,p.motionSeed,start+seconds); }
         }
         double accuracy=p.accuracy, altitude=p.altitude;
         if (drift && p.enabled && p.location && p.jitter && p.jitterMeters>0) {
@@ -50,9 +50,8 @@ public final class MotionModel {
         return new Sample(lat,lon,altitude,base,speed,bearing,accuracy);
     }
     private static double baseSpeed(Profile p,double seconds) {
-        return p.motionInitialSpeed+(p.motionSpeed-p.motionInitialSpeed)*Math.min(1,seconds/1.5);
+        return p.motionInitialSpeed+(p.motionSpeed-p.motionInitialSpeed)*(1-Math.exp(-seconds/0.65));
     }
-    private static double factor(double seconds) { return 1+0.10*Math.sin(seconds/2.7)+0.04*Math.sin(seconds/0.91); }
     /** Great-circle displacement keeps the date line and poles valid. east/north are metres. */
     public static double[] offset(double lat,double lon,double east,double north) {
         double distance=Math.hypot(east,north); if(distance==0) return new double[]{lat,lon};

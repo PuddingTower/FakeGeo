@@ -24,7 +24,6 @@ import io.github.fakegeo.config.ConfigStore;
 import io.github.fakegeo.config.Profile;
 import io.github.fakegeo.ui.MainActivity;
 import io.github.fakegeo.ui.UiKit;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -39,6 +38,8 @@ public final class JoystickService extends Service {
     private JoystickPanel panel;
     private volatile boolean closed,busy,ready;
     private volatile double magnitude,bearing,targetKmh;
+    private volatile int motionMode;
+    private volatile boolean sensorEnabled;
     private volatile Profile owned;
     private boolean screenReceiverRegistered;
     private final BroadcastReceiver screenReceiver=new BroadcastReceiver() {
@@ -54,9 +55,9 @@ public final class JoystickService extends Service {
                     if(!busy) { fail("定位配置已改变，悬浮摇杆已关闭。");return; }
                 }
                 if(!Settings.canDrawOverlays(JoystickService.this)) { fail("悬浮窗权限已关闭。");return; }
-                if(magnitude>0 || owned.motionLease>0) queue(magnitude==0);
+                if(magnitude>0 || owned.motionLease>0 || owned.motionMode!=motionMode || owned.sensors!=sensorEnabled) queue(magnitude==0);
                 MotionModel.Sample sample=MotionModel.sample(owned,SystemClock.elapsedRealtime(),System.currentTimeMillis());
-                panel.status.setText(String.format(Locale.CHINA,"%s · %.1f km/h",magnitude>0?"移动中":"松手停止",sample.speed*3.6));
+                panel.showMotion(magnitude>0,sample.speed*3.6);
             }
             ui.postDelayed(this,1000);
         }
@@ -72,7 +73,7 @@ public final class JoystickService extends Service {
             PendingIntent content=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
             PendingIntent close=PendingIntent.getService(this,1,new Intent(this,JoystickService.class).setAction(CLOSE),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
             Notification n=new Notification.Builder(this,CHANNEL).setSmallIcon(io.github.fakegeo.R.drawable.ic_launcher)
-                    .setContentTitle("FakeGeo 悬浮摇杆").setContentText("摇杆松手即停；关闭控制窗停止移动").setOngoing(true)
+                    .setContentTitle("FakeGeo 悬浮摇杆").setContentText("方向锁定后松手继续；暂停或关闭窗口停止移动").setOngoing(true)
                     .setContentIntent(content).addAction(new Notification.Action.Builder(null,"关闭摇杆",close).build()).build();
             if(android.os.Build.VERSION.SDK_INT>=34) startForeground(35,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             else startForeground(35,n);
@@ -83,7 +84,7 @@ public final class JoystickService extends Service {
             else registerReceiver(screenReceiver,filter);
             screenReceiverRegistered=true;
             worker.execute(()->{
-                try { owned=MotionPublisher.ready(this);MotionDiagnostics.record(this,"ready",0,0,owned.revision,null);ui.post(()->{ if(!closed) { ready=true;panel.joystick.setEnabled(true);panel.status.setText("就绪 · 松手停止");ui.post(pulse); } }); }
+                try { owned=MotionPublisher.ready(this);sensorEnabled=owned.sensors;MotionDiagnostics.record(this,"ready",0,0,owned.revision,null);ui.post(()->{ if(!closed) { ready=true;panel.joystick.setEnabled(true);panel.sensors(sensorEnabled,!owned.sensorTargets.isEmpty());panel.showMotion(false,0);ui.post(pulse); } }); }
                 catch(Exception error) { ui.post(()->fail(error.getMessage())); }
             });
         } catch(Exception error) { fail(error.getMessage()); }
@@ -101,6 +102,16 @@ public final class JoystickService extends Service {
                 if(ready && (amount==0 || owned==null || owned.motionLease==0)) queue(amount==0);
             }
             @Override public void close() { stopSelf(); }
+            @Override public void mode(int mode) { motionMode=mode;if(ready) queue(true); }
+            @Override public void sensors(boolean enabled) { sensorEnabled=enabled;if(ready) queue(true); }
+            @Override public void layoutChanged() {
+                ui.post(()->{ if(!closed && windows!=null && params!=null) { clampWindow();windows.updateViewLayout(panel,params); } });
+            }
+            @Override public void sensorSetup() {
+                startActivity(new Intent(JoystickService.this,io.github.fakegeo.ui.MovementSettingsActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                Toast.makeText(JoystickService.this,"选择传感器模拟应用并应用设置后，重新打开摇杆",Toast.LENGTH_LONG).show();
+            }
         });
         panel.handle.setOnTouchListener(new android.view.View.OnTouchListener() {
             float downX,downY;int startX,startY;
@@ -110,18 +121,18 @@ public final class JoystickService extends Service {
                 if(e.getActionMasked()==MotionEvent.ACTION_UP) { view.performClick();return true; }return true;
             }
         });
-        params=new WindowManager.LayoutParams(dp(246),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        params=new WindowManager.LayoutParams(dp(JoystickPanel.WIDTH_DP),WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;params.x=dp(16);params.y=dp(140);clampWindow();windows.addView(panel,params);
     }
     private void queue(boolean stop) {
-        if(closed || !ready || busy || owned==null || (stop && owned.motionLease==0)) return;
+        if(closed || !ready || busy || owned==null || (stop && owned.motionLease==0 && owned.motionMode==motionMode && owned.sensors==sensorEnabled)) return;
         busy=true;
         worker.execute(()->{
             try {
                 if(!closed) {
                     double amount=magnitude;
-                    owned=MotionPublisher.step(this,owned.revision,targetKmh/3.6*amount,bearing,amount==0);
+                    owned=MotionPublisher.step(this,owned.revision,targetKmh/3.6*amount,bearing,amount==0,motionMode,sensorEnabled);
                     MotionDiagnostics.record(this,"published",amount,targetKmh,owned.revision,"lease="+owned.motionLease);
                 }
             } catch(Exception error) { ui.post(()->fail(error.getMessage())); }
@@ -130,9 +141,9 @@ public final class JoystickService extends Service {
     }
     private void clampWindow() {
         android.util.DisplayMetrics m=getResources().getDisplayMetrics();
-        params.x=Math.max(0,Math.min(params.x,Math.max(0,m.widthPixels-dp(246))));
-        int height=panel.getHeight();
-        if(height==0) { panel.measure(android.view.View.MeasureSpec.makeMeasureSpec(dp(246),android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(0,android.view.View.MeasureSpec.UNSPECIFIED));height=panel.getMeasuredHeight(); }
+        params.x=Math.max(0,Math.min(params.x,Math.max(0,m.widthPixels-dp(JoystickPanel.WIDTH_DP))));
+        panel.measure(android.view.View.MeasureSpec.makeMeasureSpec(dp(JoystickPanel.WIDTH_DP),android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(0,android.view.View.MeasureSpec.UNSPECIFIED));
+        int height=panel.getMeasuredHeight();
         params.y=Math.max(dp(24),Math.min(params.y,Math.max(dp(24),m.heightPixels-height-dp(24))));
     }
     private void fail(String message) { if(closed) return;MotionDiagnostics.record(this,"failed",magnitude,targetKmh,owned==null?0:owned.revision,message);Toast.makeText(this,message==null?"悬浮移动无法启动":message,Toast.LENGTH_LONG).show();stopSelf(); }
@@ -145,6 +156,12 @@ public final class JoystickService extends Service {
         worker.shutdown();stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
     }
     @Override public void onTaskRemoved(Intent rootIntent) { stopSelf(); }
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config);
+        if(!closed && windows!=null && panel!=null && params!=null && panel.isAttachedToWindow()) {
+            clampWindow();windows.updateViewLayout(panel,params);
+        }
+    }
     @Override public IBinder onBind(Intent intent) { return null; }
     private int dp(int value) { return UiKit.dp(this,value); }
 }

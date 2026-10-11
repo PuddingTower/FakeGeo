@@ -136,7 +136,7 @@ public final class AdvancedSettingsActivity extends Activity {
     }
     private void save() {
         try {
-            JSONObject json = new JSONObject();
+            JSONObject json = ConfigStore.load(this).json();
             for (Map.Entry<String, EditText> entry : fields.entrySet()) json.put(entry.getKey(), entry.getValue().getText().toString().trim());
             for (Map.Entry<String, CheckBox> entry : flags.entrySet()) json.put(entry.getKey(), entry.getValue().isChecked());
             json.put("locationCacheTarget", cacheTarget);

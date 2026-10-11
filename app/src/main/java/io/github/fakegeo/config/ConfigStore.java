@@ -8,6 +8,7 @@ import android.net.Uri;
 public final class ConfigStore {
     public static final String AUTHORITY = "io.github.fakegeo.config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/profile");
+    public static final Uri SENSOR_URI = Uri.parse("content://" + AUTHORITY + "/sensors");
     private ConfigStore() {}
     private static SharedPreferences prefs(Context context) {
         return context.createDeviceProtectedStorageContext().getSharedPreferences("profile", Context.MODE_PRIVATE);
@@ -24,12 +25,17 @@ public final class ConfigStore {
         if (!prefs(context).edit().putString("published_system_json", profile.json().toString()).commit())
             throw new IllegalStateException("系统文件已发布，但电话／无线配置同步失败，请重试保存。");
         context.getContentResolver().notifyChange(URI, null);
+        context.getContentResolver().notifyChange(SENSOR_URI, null);
     }
     public static void restoreGrants(Context context) {
         grantServices(context);
         for (String target : load(context).targets) {
             try { context.grantUriPermission(target, URI, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
             catch (RuntimeException absent) { /* Uninstalled targets do not block system services. */ }
+        }
+        for (String target : load(context).sensorTargets) {
+            try { context.grantUriPermission(target, SENSOR_URI, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+            catch (RuntimeException absent) { /* Removed applications are ignored. */ }
         }
     }
     private static void grantServices(Context context) {
@@ -60,10 +66,15 @@ public final class ConfigStore {
         // URI grants make the provider visible on Android 11+ without modifying target manifests.
         for (String target : profile.targets)
             context.grantUriPermission(target, URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        for (String target : profile.sensorTargets)
+            context.grantUriPermission(target, SENSOR_URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (!prefs(context).edit().putString("json", profile.json().toString()).commit())
             throw new IllegalStateException("配置写入失败");
         for (String target : previous.targets) if (!profile.targets.contains(target))
             context.revokeUriPermission(target, URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        for (String target : previous.sensorTargets) if (!profile.sensorTargets.contains(target))
+            context.revokeUriPermission(target, SENSOR_URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         context.getContentResolver().notifyChange(URI, null);
+        context.getContentResolver().notifyChange(SENSOR_URI, null);
     }
 }
