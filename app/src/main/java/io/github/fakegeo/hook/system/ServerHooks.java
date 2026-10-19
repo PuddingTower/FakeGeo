@@ -37,10 +37,18 @@ public final class ServerHooks {
     private SystemDeliveryGuard delivery;
     private RadioServiceHooks radio;
     private RealGpsStore realGps;
+    private ConfigBinderBridge bridge;
+    private OplusLocationHooks vendor;
+    private OplusKeepAliveHooks keepAlive;
+    private OplusClassLoaderResolver resolver;
     public ServerHooks(ClassLoader loader) { this.loader = loader; config = new ServiceConfig(null, true); }
     public void install() {
         realGps=new RealGpsStore(config.worker);
         delivery = new SystemDeliveryGuard(config, coverage, errors);
+        bridge = ConfigBinderBridge.install(config, loader, coverage, errors);
+        vendor = new OplusLocationHooks(config, coverage, errors);
+        resolver = OplusClassLoaderResolver.install(loader, coverage, errors, vendor::inspect);
+        keepAlive = new OplusKeepAliveHooks(config, coverage, errors); keepAlive.install(loader);
         for (String name : new String[]{
                 "com.android.server.location.provider.LocationProviderManager",
                 "com.android.server.location.LocationProviderManager",
@@ -66,25 +74,28 @@ public final class ServerHooks {
     private void installProvider(Class<?> type) {
         Method preferred = null;
         for (Method method : type.getDeclaredMethods()) {
-            if (!method.getName().equals("onReportLocation") || method.getReturnType() != void.class || method.getParameterCount() != 1
-                    || !locationType(method.getParameterTypes()[0])) continue;
+            // Android 16 adds batch overloads (onReportLocations) and internal report handlers,
+            // so the Location parameter is located instead of assumed to be first.
+            int slot = reportSlot(method);
+            if (slot < 0) continue;
             try {
                 XposedBridge.hookMethod(method, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam call) {
-                        try { if("gps".equals(providerName(call.thisObject))) realGps.capture(call.args[0]); }
+                        try { if(slot == 0 && "gps".equals(providerName(call.thisObject))) realGps.capture(call.args[0]); }
                         catch(Throwable ignored) { /* Explicit real-position lookup never blocks virtual delivery. */ }
                         Profile p = config.get();
                         if (!p.enabled || !p.systemMode || !p.location) return;
                         String name = providerName(call.thisObject);
                         if (!supportedProvider(name)) return;
-                        try { call.args[0] = SystemLocations.batch(method.getParameterTypes()[0], report(p,
-                                name.equals("passive") ? SystemLocations.provider(call.args[0], name) : name,
-                                method.getParameterTypes()[0] == android.location.Location.class)); }
+                        try { call.args[slot] = SystemLocations.batch(method.getParameterTypes()[slot], report(p,
+                                name.equals("passive") ? SystemLocations.provider(call.args[slot], name) : name,
+                                method.getParameterTypes()[slot] == android.location.Location.class)); }
                         catch (Throwable failure) { failure("report " + name, failure); call.setResult(null); }
                     }
                 });
-                if (preferred == null || rank(method) < rank(preferred)) preferred = method;
-                coverage.add(type.getName() + ".onReportLocation(" + method.getParameterTypes()[0].getSimpleName() + ")");
+                // Only a single-parameter report can be driven directly by the heartbeat loop.
+                if (method.getParameterCount() == 1 && (preferred == null || rank(method) < rank(preferred))) preferred = method;
+                coverage.add(type.getName() + "." + method.getName() + "(" + method.getParameterTypes()[slot].getSimpleName() + ")");
             } catch (Throwable failure) { failure(type.getName(), failure); }
         }
         if (preferred != null) {
@@ -99,6 +110,15 @@ public final class ServerHooks {
     }
     private static int rank(Method method) {
         return ProviderAccess.reportPriority(method);
+    }
+    /** Index of the Location-shaped parameter of a report method, or -1 when this is not a report. */
+    private static int reportSlot(Method method) {
+        if (java.lang.reflect.Modifier.isAbstract(method.getModifiers()) || method.getReturnType() != void.class) return -1;
+        String name = method.getName();
+        if (!name.startsWith("onReport") && !name.startsWith("handleReportLocation")) return -1;
+        for (int index = 0; index < method.getParameterCount(); index++)
+            if (locationType(method.getParameterTypes()[index])) return index;
+        return -1;
     }
     private void tick() throws Exception {
         long now = SystemClock.elapsedRealtime(); Profile p = config.get();
@@ -209,6 +229,10 @@ public final class ServerHooks {
         status.put("wifiConnectivityProtected", radio.connectivityProtected());
         status.put("wifiConnectivityReplacements", radio.connectivityReplacements());
         status.put("wifiConnectivityFallbacks", radio.connectivityFallbacks());
+        status.put("configBridgeServed", bridge.served()); status.put("configBridgeDenied", bridge.deniedCount());
+        status.put("vendorLocationReplacements", vendor.replacements());
+        status.put("vendorServicesCaptured", resolver.services());
+        status.put("keepAliveFreezesSkipped", keepAlive.skipped());
         File temp = new File(RootCommands.DIRECTORY, "status.new");
         Files.write(temp.toPath(), status.toString().getBytes(StandardCharsets.UTF_8)); Os.chmod(temp.getPath(), 0600);
         Files.move(temp.toPath(), new File(RootCommands.STATUS).toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

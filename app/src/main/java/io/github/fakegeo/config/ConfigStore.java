@@ -4,9 +4,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.Intent;
 import android.net.Uri;
+import io.github.fakegeo.BuildConfig;
 
 public final class ConfigStore {
-    public static final String AUTHORITY = "io.github.fakegeo.config";
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/profile");
     public static final Uri SENSOR_URI = Uri.parse("content://" + AUTHORITY + "/sensors");
     private ConfigStore() {}

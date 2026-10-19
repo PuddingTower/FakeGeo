@@ -24,6 +24,9 @@ public final class Profile {
     public final long motionSeed;
     public final boolean sensors;
     public final Set<String> sensorTargets;
+    public final boolean antiDetect, wifiConnected, keepAlive;
+    public final String beaconMac, beaconName, beaconRecord, beaconUuid;
+    public final int beaconMajor, beaconMinor;
 
     public Profile(JSONObject json) {
         enabled = json.optBoolean("enabled", false);
@@ -71,11 +74,28 @@ public final class Profile {
         bluetoothMac = Validation.mac(json.optString("bluetoothMac", "02:00:00:00:00:12"));
         bluetoothName = json.optString("bluetoothName", "FakeGeo");
         if (bluetoothName.length() > 64) throw new IllegalArgumentException("蓝牙名称最长 64 字符");
+        antiDetect = json.optBoolean("antiDetect", true);
+        keepAlive = json.optBoolean("keepAlive", true);
+        wifiConnected = json.optBoolean("wifiConnected", false);
+        beaconMac = Validation.optionalMac(json.optString("beaconMac", ""));
+        beaconName = json.optString("beaconName", "");
+        if (beaconName.length() > 64) throw new IllegalArgumentException("信标名称最长 64 字符");
+        beaconRecord = Validation.hex(json.optString("beaconRecord", "").replace(" ", "").replace(":", ""), 31, "信标广播十六进制");
+        beaconUuid = Validation.hex(json.optString("beaconUuid", "").replace("-", "").replace(" ", ""), 16, "iBeacon UUID");
+        if (!beaconUuid.isEmpty() && beaconUuid.length() != 32) throw new IllegalArgumentException("iBeacon UUID 需要 16 字节（32 位十六进制）");
+        double major = Validation.number(json.optString("beaconMajor", "0"), 0, 65535, "信标 Major");
+        double minor = Validation.number(json.optString("beaconMinor", "0"), 0, 65535, "信标 Minor");
+        if (major != Math.floor(major) || minor != Math.floor(minor)) throw new IllegalArgumentException("信标 Major／Minor 必须是整数");
+        beaconMajor = (int) major; beaconMinor = (int) minor;
+        if (!beaconMac.isEmpty() && beaconRecord.isEmpty() && beaconUuid.isEmpty())
+            throw new IllegalArgumentException("填写了考勤机 MAC 后，请提供广播十六进制或 iBeacon UUID");
         targets = Collections.unmodifiableSet(Validation.packages(json.optString("targets", "")));
         if (enabled && !systemMode && targets.isEmpty()) throw new IllegalArgumentException("应用模式启用前请添加目标应用包名");
     }
     public static Profile defaults() { return new Profile(new JSONObject()); }
     public static Profile parse(String text) throws JSONException { return new Profile(new JSONObject(text)); }
+    /** An empty MAC keeps the previous behaviour: BLE scans stay suppressed instead of injected. */
+    public boolean beaconEnabled() { return bluetooth && !beaconMac.isEmpty(); }
     public JSONObject json() {
         JSONObject j = new JSONObject();
         try {
@@ -94,6 +114,9 @@ public final class Profile {
             j.put("accuracy", accuracy); j.put("interval", interval);
             j.put("ssid", ssid); j.put("bssid", bssid); j.put("wifiMac", wifiMac);
             j.put("bluetoothMac", bluetoothMac); j.put("bluetoothName", bluetoothName);
+            j.put("antiDetect", antiDetect); j.put("keepAlive", keepAlive); j.put("wifiConnected", wifiConnected);
+            j.put("beaconMac", beaconMac); j.put("beaconName", beaconName); j.put("beaconRecord", beaconRecord);
+            j.put("beaconUuid", beaconUuid); j.put("beaconMajor", beaconMajor); j.put("beaconMinor", beaconMinor);
             j.put("targets", String.join("\n", targets));
         } catch (JSONException e) { throw new IllegalStateException(e); }
         return j;

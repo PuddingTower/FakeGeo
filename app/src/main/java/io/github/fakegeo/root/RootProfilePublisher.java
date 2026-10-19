@@ -81,7 +81,7 @@ public final class RootProfilePublisher {
             bytes = buffer.toByteArray();
         }
         String encoded = Base64.getEncoder().encodeToString(bytes);
-        return "set -eu\numask 077\n[ \"$(id -u)\" = 0 ] || exit 1\n"
+        return "set -eu\n" + io.github.fakegeo.root.RootCommands.PATH + "umask 077\n[ \"$(id -u)\" = 0 ] || exit 1\n"
                 + "[ -d '" + RootCommands.DIRECTORY + "' ] && [ ! -L '" + RootCommands.DIRECTORY + "' ] || exit 1\n"
                 + "[ ! -L '" + path + "' ] && [ ! -L '" + LAST + "' ] && [ ! -L '" + LAST + ".new' ] || exit 1\n"
                 + "printf '%s' '" + encoded + "' | base64 -d > '" + path + "'\nchmod 600 '" + path + "'\n";

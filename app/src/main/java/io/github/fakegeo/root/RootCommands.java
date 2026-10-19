@@ -8,6 +8,8 @@ public final class RootCommands {
     public static final String DIRECTORY = "/data/system/fakegeo";
     public static final String PROFILE = DIRECTORY + "/profile.json";
     public static final String STATUS = DIRECTORY + "/status.json";
+    /** KernelSU, APatch and Magisk each keep their helpers in a different bin directory. */
+    public static final String PATH = "export PATH=/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:/system/bin:/system/xbin:$PATH\n";
     private RootCommands() {}
     /** Android mksh's numeric test operators can truncate epoch milliseconds to 32 bits. */
     public static String revisionOrderFunction() {
@@ -23,7 +25,7 @@ public final class RootCommands {
                 + "[ \"$fg_cmp_left\" = \"$fg_cmp_right\" ] || [ \"$fg_cmp_left\" \\< \"$fg_cmp_right\" ]\n}\n";
     }
     static String prepareDirectory() {
-        return "set -eu\nexport LC_ALL=C\n"
+        return "set -eu\n" + PATH + "export LC_ALL=C\n"
                 + "[ \"$(id -u)\" = 0 ] || { echo 'Root UID 0 required'; exit 1; }\n"
                 + "d='" + DIRECTORY + "'\n"
                 + "[ ! -L \"$d\" ] && [ ! -L \"$d/profile.json\" ] && [ ! -L \"$d/status.json\" ] || { echo 'Unsafe symlink'; exit 1; }\n"

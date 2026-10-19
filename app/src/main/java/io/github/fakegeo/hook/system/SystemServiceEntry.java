@@ -15,6 +15,11 @@ public final class SystemServiceEntry {
         if (name.equals("com.android.phone")) hooks.installPhone();
         if (name.equals("com.android.bluetooth")) hooks.installBluetooth();
         if (name.endsWith(".wifi")) hooks.installWifi(loader);
+        if (ServicePackages.isVendor(name)) {
+            // Vendor location daemons publish their own Binder services inside this process.
+            OplusLocationHooks vendor = new OplusLocationHooks(config, coverage, errors);
+            OplusClassLoaderResolver.install(loader, coverage, errors, vendor::inspect);
+        }
         XposedBridge.log("FakeGeo: service hooks " + name + ": " + coverage);
         config.worker.post(new Runnable() {
             @Override public void run() {

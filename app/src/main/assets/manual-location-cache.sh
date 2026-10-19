@@ -7,7 +7,7 @@ fg_package=${3-}
 case "$fg_revision" in ''|*[!0-9]*) echo INVALID_CACHE_REVISION; exit 1;; esac
 [ "${#fg_revision}" -le 19 ] || { echo INVALID_CACHE_REVISION; exit 1; }
 [ "${#fg_package}" -le 255 ] && printf '%s\n' "$fg_package" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$' || { echo INVALID_CACHE_PACKAGE; exit 1; }
-case "$fg_package" in io.github.fakegeo|com.android.*|com.google.android.gms*) echo PROTECTED_CACHE_PACKAGE; exit 1;; esac
+case "$fg_package" in io.github.fakegeo|io.github.fakegeo.dev|com.android.*|com.google.android.gms*) echo PROTECTED_CACHE_PACKAGE; exit 1;; esac
 fg_app="/data/user/0/$fg_package"
 fg_db="$fg_app"
 fg_backup="$fg_base/manual-location-cache-$fg_revision"

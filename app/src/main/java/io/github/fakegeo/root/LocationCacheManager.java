@@ -9,6 +9,9 @@ import org.json.JSONObject;
 public final class LocationCacheManager {
     private static final String SCRIPT = RootCommands.DIRECTORY + "/manual-location-cache.sh";
     private static final String LAST = RootCommands.DIRECTORY + "/manual-cache-last";
+    private static final String VENDOR_SCRIPT = RootCommands.DIRECTORY + "/lark-location-cache.sh";
+    private static final String VENDOR_ASSET = "lark-location-cache.sh";
+    private static final String VENDOR_LAST = RootCommands.DIRECTORY + "/lark-cache-last";
     private static final AtomicLong lastId = new AtomicLong();
     private LocationCacheManager() {}
     public static String clear(Context context, String target) throws Exception {
@@ -42,6 +45,39 @@ public final class LocationCacheManager {
                     + "/system/bin/sh '" + SCRIPT + "' restore \"$fg_id\" \"$fg_package\"\n"
                     + "else echo NO_MANUAL_BACKUP; fi\n"));
             return result.equals("NO_MANUAL_BACKUP") ? RootProfilePublisher.restoreLatest(context) : result;
+        }
+    }
+    /** Third-party positioning caches, including ColorOS clone profiles, with a reversible move. */
+    public static String clearVendorCaches(Context context, String target) throws Exception {
+        synchronized (ConfigStore.class) {
+            if (target.isEmpty()) throw new IllegalArgumentException("请先选择应用");
+            RootProfilePublisher.validateTarget(context, target);
+            RootBridge.execute(RootCommands.status());
+            long id = lastId.updateAndGet(previous -> Math.max(System.currentTimeMillis(), previous + 1));
+            String body = RootProfilePublisher.installAsset(context, VENDOR_ASSET, VENDOR_SCRIPT)
+                    + "[ ! -L '" + VENDOR_LAST + "' ] && [ ! -L '" + VENDOR_LAST + ".new' ] || exit 1\n"
+                    + "/system/bin/sh '" + VENDOR_SCRIPT + "' backup " + id + " '" + target + "'\n"
+                    + "fg_lark_done=0\ntrap 'if [ \"$fg_lark_done\" = 0 ]; then /system/bin/sh " + VENDOR_SCRIPT + " restore " + id + " " + target + " rollback; fi' EXIT\n"
+                    + "trap 'exit 1' HUP INT TERM\n"
+                    + "if [ -d '" + RootCommands.DIRECTORY + "/lark-location-cache-" + id + "' ]; then\n"
+                    + "printf '%s\\n%s\\n' '" + id + "' '" + target + "' > '" + VENDOR_LAST + ".new'\n"
+                    + "mv '" + VENDOR_LAST + ".new' '" + VENDOR_LAST + "'\nfi\nfg_lark_done=1\n";
+            return RootBridge.execute(RootProfilePublisher.namespace(body));
+        }
+    }
+    public static String restoreVendorCaches(Context context) throws Exception {
+        synchronized (ConfigStore.class) {
+            JSONObject report = new JSONObject(RootBridge.execute(RootCommands.status()));
+            RuntimeGate.requireCurrent(report, System.currentTimeMillis());
+            if (report.optBoolean("enabled") || ConfigStore.published(context).enabled)
+                throw new IllegalStateException("请先停止虚拟环境并确认系统已禁用，再恢复缓存。");
+            return RootBridge.execute(RootProfilePublisher.namespace(
+                    RootProfilePublisher.installAsset(context, VENDOR_ASSET, VENDOR_SCRIPT)
+                    + "[ ! -L '" + VENDOR_LAST + "' ] || exit 1\n"
+                    + "if [ -f '" + VENDOR_LAST + "' ]; then\n"
+                    + "fg_id=$(sed -n '1p' '" + VENDOR_LAST + "')\nfg_package=$(sed -n '2p' '" + VENDOR_LAST + "')\n"
+                    + "/system/bin/sh '" + VENDOR_SCRIPT + "' restore \"$fg_id\" \"$fg_package\"\n"
+                    + "else echo NO_VENDOR_BACKUP; fi\n"));
         }
     }
 }

@@ -1,0 +1,15 @@
+<resources>
+    <string-array name="xposed_scope">
+        <item>android</item>
+        <item>com.android.phone</item>
+        <item>com.android.bluetooth</item>
+        <item>com.android.wifi</item>
+        <item>com.google.android.wifi</item>
+        <item>com.oplus.location</item>
+        <item>com.oplus.locationproxy</item>
+        <item>com.oplus.nhs</item>
+        <item>com.oplus.athena</item>
+        <item>com.qualcomm.location</item>
+        <item>io.github.fakegeo.dev</item>
+    </string-array>
+</resources>

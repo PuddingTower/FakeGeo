@@ -52,7 +52,7 @@ public final class AdvancedSettingsActivity extends Activity {
         button("高德地图与搜索设置", () -> startActivity(new Intent(this, MapSettingsActivity.class)));
         section("系统与授权");
         text(MainActivity.moduleActive() ? "LSPosed 已注入模块界面" : "请在 LSPosed 启用模块；界面未被注入不代表目标 App 未生效。", 14, UiKit.MUTED);
-        text("Android 10–15 · 系统服务 Hook\n在 LSPosed 中选择 Android 系统／系统框架、电话服务、蓝牙与 Wi-Fi 服务，首次启用后重启手机。系统模式统一影响各 App 收到的位置。", 14, Color.DKGRAY);
+        text("Android 10–16 · 系统服务 Hook\n在 LSPosed 中选择 Android 系统／系统框架、电话服务、蓝牙与 Wi-Fi 服务；一加／ColorOS 还需勾选 Oplus 定位与高通定位服务（列表里没有就是本机没有该组件）。首次启用或改动作用域后重启手机。\n蓝牙信标注入、高德结果清洗与调用栈隐藏只在应用兼容模式下生效：需要把目标应用同时加入作用域，并关闭系统模式。", 14, Color.DKGRAY);
         rootStatus = new TextView(this); rootStatus.setText("Root 与系统 Hook 状态：尚未检测"); content.addView(rootStatus);
         button("请求 KernelSU / Root 授权", () -> rootTask("请求 Root 授权…", () -> { RootBridge.authorize(); return "已取得 Root UID 0。请继续在 LSPosed 启用系统作用域。"; }));
         button("查看 LSPosed 系统作用域", this::scopeInstructions);
@@ -79,6 +79,14 @@ public final class AdvancedSettingsActivity extends Activity {
             return result.contains("LOCATION_CACHE_ALREADY_RESTORED") ? "最近的定位缓存备份已恢复过。" : "定位缓存已恢复，请重新打开备份对应的应用。";
         }));
         text("恢复前需停止虚拟环境；恢复会关闭备份对应的应用，旧缓存可能带回旧位置。", 13, UiKit.MUTED);
+        button("清理所选应用的第三方定位缓存（含应用分身）", this::clearVendorCache);
+        text("仅移动白名单中的高德定位缓存（shared_prefs/amap*、files/amap、cache/location 等），不触碰登录态与聊天记录；会先关闭该应用，可恢复。没有匹配文件时明确提示，不会误删。", 13, UiKit.MUTED);
+        button("恢复最近一次高德定位缓存备份", () -> rootTask("正在恢复高德定位缓存…", () -> {
+            String result = io.github.fakegeo.root.LocationCacheManager.restoreVendorCaches(this);
+            return result.contains("NO_VENDOR_BACKUP") ? "没有高德定位缓存备份需要恢复。"
+                    : result.contains("ALREADY_RESTORED") ? "该备份已经恢复过了。"
+                    : result.contains("NOT_FOUND") ? "没有发现可清理的第三方定位缓存。" : "第三方定位缓存已恢复，请重新打开该应用。";
+        }));
         section("位置参数 · WGS84");
         button("悬浮摇杆 · 走路／跑步／骑车", () -> startActivity(new Intent(this, MovementSettingsActivity.class)));
         flag("jitter", "模拟小幅卫星定位漂移", p.jitter);
@@ -95,6 +103,17 @@ public final class AdvancedSettingsActivity extends Activity {
         field("wifiMac", "虚拟 Wi-Fi MAC", p.wifiMac, false);
         field("bluetoothMac", "虚拟蓝牙 MAC", p.bluetoothMac, false);
         field("bluetoothName", "虚拟蓝牙名称", p.bluetoothName, false);
+        flag("wifiConnected", "移动数据时也报告已连接该 Wi-Fi", p.wifiConnected);
+        flag("antiDetect", "隐藏模拟定位开关、AppOps 与模块调用栈", p.antiDetect);
+        flag("keepAlive", "ColorOS 冻结豁免（仅豁免本模块进程）", p.keepAlive);
+        section("蓝牙考勤信标");
+        text("填写考勤机 MAC 后二选一：粘贴抓包得到的完整广播十六进制，或填写 iBeacon UUID 与 Major／Minor。留空时维持原来的“屏蔽蓝牙扫描”。", 13, UiKit.MUTED);
+        field("beaconMac", "考勤机 MAC（留空表示不注入）", p.beaconMac, false);
+        field("beaconRecord", "广播数据十六进制（推荐，最长 31 字节）", p.beaconRecord, false);
+        field("beaconUuid", "iBeacon UUID（32 位十六进制）", p.beaconUuid, false);
+        field("beaconMajor", "Major（0–65535）", String.valueOf(p.beaconMajor), true);
+        field("beaconMinor", "Minor（0–65535）", String.valueOf(p.beaconMinor), true);
+        field("beaconName", "信标名称（仅原始广播里包含时才有效）", p.beaconName, false);
         section("应用兼容模式");
         field("targets", "应用兼容模式的包名（系统模式无需填写）", String.join("\n", p.targets), false);
         compatibilityViews.add(content.getChildAt(content.getChildCount() - 2));
@@ -173,7 +192,7 @@ public final class AdvancedSettingsActivity extends Activity {
     private void scopeInstructions() {
         Intent manager = getPackageManager().getLaunchIntentForPackage("org.lsposed.manager");
         new AlertDialog.Builder(this).setTitle("LSPosed 系统作用域")
-                .setMessage("启用 FakeGeo 后勾选：\n• Android 系统／系统框架（android）\n• 电话服务（com.android.phone）\n• 蓝牙（com.android.bluetooth）\n• Wi-Fi 服务（若列表存在）\n\n首次启用或改变系统作用域后重启手机。KernelSU Root 授权不能代替 LSPosed 作用域授权。")
+                .setMessage("启用 FakeGeo 后勾选：\n• Android 系统／系统框架（android）\n• 电话服务（com.android.phone）\n• 蓝牙（com.android.bluetooth）\n• Wi-Fi 服务（若列表存在）\n• ColorOS：com.oplus.location、com.oplus.locationproxy、com.oplus.nhs、com.oplus.athena（若列表存在）\n• 高通：com.qualcomm.location（若列表存在）\n\n首次启用或改变系统作用域后重启手机。KernelSU Root 授权不能代替 LSPosed 作用域授权。")
                 .setPositiveButton(manager == null ? "知道了" : "打开 LSPosed", (dialog, which) -> { if (manager != null) startActivity(manager); }).show();
     }
     private interface RootAction { String run() throws Exception; }
@@ -206,6 +225,9 @@ public final class AdvancedSettingsActivity extends Activity {
                 + " · 拦截：" + status.optLong("deliveryDrops")
                 + "\nWi-Fi 网络能力保护：" + (status.optBoolean("wifiConnectivityProtected") ? "已加载" : "未加载")
                 + " · 替换：" + status.optLong("wifiConnectivityReplacements") + " · 降级：" + status.optLong("wifiConnectivityFallbacks")
+                + "\n配置桥接：应答 " + status.optLong("configBridgeServed") + " · 拒绝 " + status.optLong("configBridgeDenied")
+                + "\n厂商定位服务：捕获 " + status.optLong("vendorServicesCaptured") + " · 替换 " + status.optLong("vendorLocationReplacements")
+                + "\nColorOS 冻结豁免：" + status.optLong("keepAliveFreezesSkipped")
                 + "\n已安装 Hook：" + status.optJSONArray("hooks")
                 + "\n配置错误：" + status.optString("configError") + "\n接口错误：" + status.optJSONArray("errors")
                 + describeServices();
@@ -249,6 +271,21 @@ public final class AdvancedSettingsActivity extends Activity {
             } catch (Exception failure) { message = "清理未完成：" + failure.getMessage(); }
             String outcome = message;
             runOnUiThread(() -> { if (!isDestroyed()) { clearCacheButton.setEnabled(true); rootStatus.setText(outcome); Toast.makeText(this, outcome, Toast.LENGTH_LONG).show(); } });
+        });
+    }
+    private void clearVendorCache() {
+        if (cacheTarget.isEmpty()) { Toast.makeText(this,"请先选择应用",Toast.LENGTH_SHORT).show(); return; }
+        String target = cacheTarget;
+        rootStatus.setText("正在备份并清理所选应用的第三方定位缓存…");
+        rootWorker.execute(() -> {
+            String message;
+            try {
+                String result = io.github.fakegeo.root.LocationCacheManager.clearVendorCaches(this, target);
+                message = result.contains("VENDOR_LOCATION_CACHE_NOT_FOUND")
+                        ? "未发现白名单内的第三方定位缓存，未移动任何文件。" : "第三方定位缓存已备份并清除，请重新打开所选应用。";
+            } catch (Exception failure) { message = "清理未完成：" + failure.getMessage(); }
+            String outcome = message;
+            runOnUiThread(() -> { if (!isDestroyed()) { rootStatus.setText(outcome); Toast.makeText(this, outcome, Toast.LENGTH_LONG).show(); } });
         });
     }
     private void checkUpdate() {

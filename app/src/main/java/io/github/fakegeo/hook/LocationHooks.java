@@ -2,7 +2,6 @@ package io.github.fakegeo.hook;
 
 import android.app.PendingIntent;
 import android.content.Intent;
-import android.location.GnssStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -13,6 +12,8 @@ import java.util.Arrays;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import io.github.fakegeo.config.Profile;
+import io.github.fakegeo.hook.system.GnssPayload;
+import io.github.fakegeo.hook.system.SystemLocations;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -20,8 +21,11 @@ import de.robv.android.xposed.XposedHelpers;
 final class LocationHooks {
     private final RuntimeConfig config;
     private final Subscriptions subscriptions;
+    private final AppGnssStatus gnss;
     private final ThreadLocal<Boolean> original = ThreadLocal.withInitial(() -> false);
-    LocationHooks(RuntimeConfig config) { this.config = config; subscriptions = new Subscriptions(config); }
+    LocationHooks(RuntimeConfig config) {
+        this.config = config; subscriptions = new Subscriptions(config); gnss = new AppGnssStatus(config);
+    }
     private boolean active() { Profile p = config.get(); return p.enabled && p.location; }
     void install() {
         scalar("getLatitude", p -> sample(p).latitude); scalar("getLongitude", p -> sample(p).longitude);
@@ -34,7 +38,17 @@ final class LocationHooks {
         scalar("hasVerticalAccuracy", p -> true); scalar("hasSpeedAccuracy", p -> true);
         scalar("hasBearingAccuracy", p -> true);
         scalar("hasMslAltitude", p -> false); scalar("hasMslAltitudeAccuracy", p -> false);
-        scalar("getExtras", p -> null);
+        scalar("hasElapsedRealtimeUncertaintyNanos", p -> true);
+        scalar("getElapsedRealtimeUncertaintyNanos", p -> GnssPayload.current().uncertaintyNanos());
+        // Attendance SDKs read these two flags; a real fix and a virtual one must look identical.
+        scalar("isMock", p -> false); scalar("isFromMockProvider", p -> false);
+        Hooks.all(Location.class, "getExtras", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam call) {
+                if (original.get() || !active()) return;
+                String provider = ((Location) call.thisObject).getProvider();
+                call.setResult(SystemLocations.metadata(config.get(), known(provider) ? provider : "gps"));
+            }
+        });
         // Serialization and string representations must use the same fields as getters.
         for (String name : new String[]{"writeToParcel", "toString"}) Hooks.all(Location.class, name, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam call) throws Throwable {
@@ -126,16 +140,16 @@ final class LocationHooks {
                     }
                 }
             });
-        for (String name : new String[]{"registerGnssStatusCallback", "registerGnssMeasurementsCallback",
-                "registerGnssNavigationMessageCallback", "addNmeaListener", "addGpsStatusListener"})
+        // Raw pseudorange and NMEA stay unavailable; the virtual fix has no physical measurement behind it.
+        for (String name : new String[]{"registerGnssMeasurementsCallback", "registerGnssNavigationMessageCallback",
+                "addNmeaListener", "addGpsStatusListener"})
             Hooks.all(LocationManager.class, name, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam call) {
-                    if (active()) call.setResult(false); // Raw GNSS/NMEA is unavailable in this virtual provider.
+                    if (active()) call.setResult(false);
                 }
             });
-        Hooks.all(GnssStatus.class, "getSatelliteCount", new XC_MethodHook() {
-            @Override protected void afterHookedMethod(MethodHookParam call) { if (active()) call.setResult(0); }
-        });
+        // Satellite status is published instead of forced to zero, so accuracy and constellation agree.
+        gnss.install();
     }
     interface Value { Object get(Profile p); }
     private static io.github.fakegeo.motion.MotionModel.Sample sample(Profile p) {

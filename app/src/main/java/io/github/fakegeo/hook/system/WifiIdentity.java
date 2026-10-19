@@ -7,10 +7,45 @@ import android.util.SparseArray;
 import io.github.fakegeo.config.Profile;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import de.robv.android.xposed.XposedHelpers;
 
 /** Copies app-facing snapshots. Never changes the controller's live WifiInfo or capabilities. */
 public final class WifiIdentity {
     private WifiIdentity() {}
+    /** Shared with the per-app hooks so both paths report the same fading signal. */
+    public static int signal(long elapsedRealtime) {
+        double t = elapsedRealtime / 1000.0;
+        return -45 + (int) Math.round(3 * Math.sin(t / 5.0)); // -48 .. -42 dBm
+    }
+    /**
+     * Answers a cellular network as the attendance access point. Only reachable from a system
+     * service, because the transport mutators are not part of the public SDK.
+     */
+    public static NetworkCapabilities connected(NetworkCapabilities source, Profile p) throws ReflectiveOperationException {
+        NetworkCapabilities result = copyCapabilities(source);
+        XposedHelpers.callMethod(result, "removeTransport", NetworkCapabilities.TRANSPORT_CELLULAR);
+        XposedHelpers.callMethod(result, "addTransport", NetworkCapabilities.TRANSPORT_WIFI);
+        WifiInfo identity = identity(p);
+        XposedHelpers.callMethod(result, "setTransportInfo", identity);
+        set(result, "mSSID", "\"" + p.ssid.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
+        return result;
+    }
+    /** A fresh WifiInfo for a network the radio is not actually joined to. */
+    private static WifiInfo identity(Profile p) {
+        try {
+            Object builder = XposedHelpers.newInstance(Class.forName("android.net.wifi.WifiInfo$Builder"));
+            XposedHelpers.callMethod(builder, "setSsid", p.ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            XposedHelpers.callMethod(builder, "setBssid", android.net.MacAddress.fromString(p.bssid));
+            XposedHelpers.callMethod(builder, "setMacAddress", android.net.MacAddress.fromString(p.wifiMac));
+            XposedHelpers.callMethod(builder, "setRssi", signal(android.os.SystemClock.elapsedRealtime()));
+            XposedHelpers.callMethod(builder, "setFrequency", 2412);
+            XposedHelpers.callMethod(builder, "setNetworkId", 1);
+            return (WifiInfo) XposedHelpers.callMethod(builder, "build");
+        } catch (Throwable olderLayout) {
+            // Without a builder the caller keeps the real transport instead of a half-built snapshot.
+            throw new IllegalStateException("Synthetic WifiInfo is unavailable", olderLayout);
+        }
+    }
     public static WifiInfo copy(WifiInfo source, Profile p) throws ReflectiveOperationException {
         WifiInfo result;
         if (Build.VERSION.SDK_INT >= 31) result = source.makeCopy(0);
@@ -23,6 +58,8 @@ public final class WifiIdentity {
             set(result, "mWifiSsid", ssid(p.ssid));
         if (visibleMac(source.getBSSID())) set(result, "mBSSID", p.bssid);
         if (visibleMac(source.getMacAddress())) set(result, "mMacAddress", p.wifiMac);
+        // The connected signal must match the fabricated scan entry, not the real router distance.
+        optional(result, "mRssi", signal(android.os.SystemClock.elapsedRealtime()));
         optional(result, "mNetworkId", source.getNetworkId() < 0 ? -1 : 1);
         // These are independently serialized; changing SSID/BSSID alone leaves real identities.
         for (String name : new String[]{"mNetworkKey", "mPasspointUniqueId", "mFqdn",

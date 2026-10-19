@@ -1,5 +1,6 @@
 package io.github.fakegeo.config;
 
+import io.github.fakegeo.BuildConfig;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -21,13 +22,23 @@ public final class Validation {
             throw new IllegalArgumentException("MAC 地址不能是组播地址");
         return result;
     }
+    /** Blank means "feature not configured", which is different from an invalid address. */
+    public static String optionalMac(String text) { return text == null || text.trim().isEmpty() ? "" : mac(text); }
+    public static String hex(String text, int maxBytes, String label) {
+        String value = text == null ? "" : text.trim().toUpperCase(java.util.Locale.ROOT);
+        if (value.isEmpty()) return "";
+        if (!value.matches("[0-9A-F]+") || value.length() % 2 != 0 || value.length() / 2 > maxBytes)
+            throw new IllegalArgumentException(label + "需要不超过 " + maxBytes + " 字节的十六进制文本");
+        return value;
+    }
     public static Set<String> packages(String text) {
         Set<String> result = new LinkedHashSet<>();
         for (String item : text.split("[\\s,;，；]+")) {
             if (item.isEmpty()) continue;
             if (!item.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+"))
                 throw new IllegalArgumentException("无效包名：" + item);
-            if (item.equals("io.github.fakegeo") || item.startsWith("com.android.")
+            // Refuses the release id as well, so a debug build cannot hook an installed release module.
+            if (item.equals(BuildConfig.APPLICATION_ID) || item.equals("io.github.fakegeo") || item.startsWith("com.android.")
                     || item.startsWith("com.google.android.gms") || item.equals("android"))
                 throw new IllegalArgumentException("不支持把系统组件或模块自身作为目标：" + item);
             result.add(item);

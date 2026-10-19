@@ -3,6 +3,8 @@ package io.github.fakegeo.hook;
 import android.location.Location;
 import android.os.SystemClock;
 import io.github.fakegeo.config.Profile;
+import io.github.fakegeo.hook.system.GnssPayload;
+import io.github.fakegeo.hook.system.SystemLocations;
 
 final class LocationFactory {
     private LocationFactory() {}
@@ -25,7 +27,12 @@ final class LocationFactory {
         result.setSpeed(sample.speed); result.setBearing(sample.bearing);
         result.setVerticalAccuracyMeters(sample.accuracy);
         result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
-        result.setExtras(null);
+        result.setElapsedRealtimeUncertaintyNanos(GnssPayload.current().uncertaintyNanos());
+        result.setExtras(SystemLocations.metadata(profile, result.getProvider()));
+        // The flag survives a Location copy and parcel, so clear it on the object, not only on getters.
+        if (android.os.Build.VERSION.SDK_INT >= 31) result.setMock(false);
+        else try { de.robv.android.xposed.XposedHelpers.setObjectField(result, "mIsFromMockProvider", false); }
+        catch (Throwable absent) { /* Older releases renamed the field; the getters still cover it. */ }
         if (android.os.Build.VERSION.SDK_INT >= 34) {
             result.removeMslAltitude(); result.removeMslAltitudeAccuracy();
         }

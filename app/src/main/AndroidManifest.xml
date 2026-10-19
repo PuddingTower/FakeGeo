@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <!-- A per-app LSPosed utility must list installed targets, including apps without a launcher. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
-    <permission android:name="io.github.fakegeo.READ_CONFIG" android:protectionLevel="signature" />
+    <permission android:name="${applicationId}.READ_CONFIG" android:protectionLevel="signature" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -39,9 +39,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <provider android:name=".config.ConfigProvider" android:authorities="io.github.fakegeo.config"
-            android:exported="true" android:readPermission="io.github.fakegeo.READ_CONFIG"
-            android:writePermission="io.github.fakegeo.READ_CONFIG"
+        <provider android:name=".config.ConfigProvider" android:authorities="${applicationId}.config"
+            android:exported="true" android:readPermission="${applicationId}.READ_CONFIG"
+            android:writePermission="${applicationId}.READ_CONFIG"
             android:grantUriPermissions="true" android:directBootAware="true" />
     </application>
 </manifest>

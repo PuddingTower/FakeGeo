@@ -4,13 +4,13 @@ def localSettingsFile = rootProject.file('local.properties')
 if (localSettingsFile.exists()) localSettingsFile.withInputStream { localSettings.load(it) }
 android {
     namespace 'io.github.fakegeo'
-    compileSdk 35
+    compileSdk 36
     defaultConfig {
         applicationId 'io.github.fakegeo'
         minSdk 29
-        targetSdk 35
-        versionCode 17
-        versionName '0.3.9'
+        targetSdk 36
+        versionCode 18
+        versionName '0.4.0'
         testInstrumentationRunner 'io.github.fakegeo.motion.MotionInstrumentation'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -19,7 +19,9 @@ android {
             if (localSettings.getProperty('fakegeo.debug.keystore')) storeFile file(localSettings.getProperty('fakegeo.debug.keystore'))
         }
     }
-    buildTypes { release { minifyEnabled false } }
+    buildFeatures { buildConfig true }
+    // Debug installs beside a release build: separate id, so the provider authority below differs too.
+    buildTypes { debug { applicationIdSuffix '.dev' }; release { minifyEnabled false } }
 }
 dependencies {
     implementation 'com.amap.api:3dmap-location-search:11.2.100_loc11.2.100_sea9.8.1'

@@ -78,7 +78,8 @@ final class SystemGnss {
     long reports() { return reportCount; }
     boolean captured() { Endpoint value=endpoint; return value != null && value.manager.get() != null; }
     private static Object[] arguments(Method method) throws ReflectiveOperationException {
-        return method.getParameterCount() == 1 ? new Object[]{GnssStatusFactory.create()} : new GnssPayload().legacyArguments();
+        GnssPayload payload = GnssPayload.current();
+        return method.getParameterCount() == 1 ? new Object[]{GnssStatusFactory.create(payload)} : payload.legacyArguments();
     }
     private void error(String stage, Throwable failure) {
         String message = "GNSS " + stage + ": " + failure.getClass().getSimpleName();

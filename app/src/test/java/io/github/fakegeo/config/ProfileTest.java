@@ -38,6 +38,20 @@ public class ProfileTest {
         assertThrows(IllegalArgumentException.class, () -> new Profile(unicode));
         assertThrows(IllegalArgumentException.class, () -> new Profile(fractional));
     }
+    @Test public void concealmentAndBeaconFieldsSurvivePublishing() throws Exception {
+        Profile defaults = Profile.defaults();
+        assertTrue(defaults.antiDetect); assertTrue(defaults.keepAlive); assertFalse(defaults.wifiConnected);
+        assertFalse(defaults.beaconEnabled());
+        Profile beacon = new Profile(new JSONObject().put("bluetooth", true).put("beaconMac", "02:00:00:00:00:20")
+                .put("beaconRecord", "0201061AFF4C000215").put("beaconMajor", 7).put("beaconMinor", 9).put("wifiConnected", true));
+        Profile again = Profile.parse(beacon.json().toString());
+        assertTrue(again.beaconEnabled()); assertTrue(again.wifiConnected);
+        assertEquals("02:00:00:00:00:20", again.beaconMac);
+        assertEquals("0201061AFF4C000215", again.beaconRecord);
+        assertEquals(7, again.beaconMajor); assertEquals(9, again.beaconMinor);
+        assertThrows(IllegalArgumentException.class, () -> new Profile(new JSONObject().put("beaconMac", "02:00:00:00:00:20")));
+        assertThrows(IllegalArgumentException.class, () -> new Profile(new JSONObject().put("beaconRecord", "ZZ")));
+    }
     @Test public void obsoleteSdkCompatibilityFieldsAreIgnoredAndNotPublished() throws Exception {
         Profile p = new Profile(new JSONObject().put("sdkCompat", true).put("sdkTargets", "com.wisedu.cpdaily"));
         assertTrue(p.systemMode);assertTrue(p.targets.isEmpty());

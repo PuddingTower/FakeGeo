@@ -4,11 +4,19 @@ def localSettingsFile = rootProject.file('local.properties')
 if (localSettingsFile.exists()) localSettingsFile.withInputStream { localSettings.load(it) }
 android {
     namespace 'io.github.fakegeo.probe'
-    compileSdk 35
+    compileSdk 36
     // Match the affected client's legacy Wi-Fi permission path, rather than testing only modern clients.
     defaultConfig { applicationId 'io.github.fakegeo.probe'; minSdk 29; targetSdk 30; versionCode 4; versionName '0.2.2' }
     lint { disable 'ExpiredTargetSdkVersion' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug {
+            applicationIdSuffix '.dev'
+            buildConfigField 'String', 'FG_AUTHORITY', '"io.github.fakegeo.dev.config"'
+        }
+        release { buildConfigField 'String', 'FG_AUTHORITY', '"io.github.fakegeo.config"' }
+    }
     signingConfigs {
         debug {
             if (localSettings.getProperty('fakegeo.debug.keystore')) storeFile file(localSettings.getProperty('fakegeo.debug.keystore'))

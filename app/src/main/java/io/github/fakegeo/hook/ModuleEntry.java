@@ -19,7 +19,7 @@ public final class ModuleEntry implements IXposedHookLoadPackage {
             install("system_server", () -> new ServerHooks(param.classLoader).install());
             return;
         }
-        if (param.packageName.equals("io.github.fakegeo")) {
+        if (param.packageName.equals(io.github.fakegeo.BuildConfig.APPLICATION_ID)) {
             XposedHelpers.findAndHookMethod("io.github.fakegeo.ui.MainActivity", param.classLoader,
                     "moduleActive", XC_MethodReplacement.returnConstant(true));
             return;
@@ -41,6 +41,8 @@ public final class ModuleEntry implements IXposedHookLoadPackage {
                 install("sensors", () -> new SensorHooks(new RuntimeConfig((Context) call.args[0], true)).install());
                 if (config.get().systemMode) return;
                 install("location", () -> new LocationHooks(config).install());
+                install("concealment", () -> new AntiDetectionHooks(config).install());
+                install("amap", () -> new LarkLocationHooks(config, param.classLoader).install());
                 install("wifi", () -> new WifiHooks(config).install());
                 install("bluetooth", () -> new BluetoothHooks(config).install());
                 install("cell", () -> new CellHooks(config).install());

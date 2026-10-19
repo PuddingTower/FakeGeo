@@ -1,5 +1,6 @@
 package io.github.fakegeo.hook;
 
+import android.net.ConnectivityManager;
 import android.net.DhcpInfo;
 import android.net.NetworkCapabilities;
 import android.net.wifi.ScanResult;
@@ -17,10 +18,15 @@ final class WifiHooks {
     private final ThreadLocal<Boolean> original = ThreadLocal.withInitial(() -> false);
     WifiHooks(RuntimeConfig config) { this.config = config; }
     private boolean active() { Profile p = config.get(); return p.enabled && p.wifi; }
+    /** The "attendance Wi-Fi is connected" story, even while the radio is on 5G. */
+    private boolean connected() { Profile p = config.get(); return p.enabled && p.wifi && p.wifiConnected; }
+    private static int signal() {
+        return io.github.fakegeo.hook.system.WifiIdentity.signal(SystemClock.elapsedRealtime());
+    }
     void install() {
         after("getSSID", p -> "\"" + p.ssid.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
         after("getBSSID", p -> p.bssid); after("getMacAddress", p -> p.wifiMac);
-        after("getRssi", p -> -55); after("getFrequency", p -> 2412);
+        after("getRssi", p -> signal()); after("getFrequency", p -> 2412);
         after("getIpAddress", p -> 0x0200000A); // 10.0.0.2 in Android's little-endian representation.
         after("getNetworkId", p -> 1);
         after("getPasspointFqdn", p -> null); after("getPasspointProviderFriendlyName", p -> null);
@@ -41,8 +47,12 @@ final class WifiHooks {
         });
         Hooks.all(NetworkCapabilities.class, "getTransportInfo", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam call) {
-                if (active() && !call.hasThrowable() && call.getResult() instanceof WifiInfo)
-                    call.setResult(clean((WifiInfo) call.getResult(), config.get()));
+                if (!active() || call.hasThrowable()) return;
+                Object value = call.getResult();
+                try {
+                    if (value instanceof WifiInfo) call.setResult(clean((WifiInfo) value, config.get()));
+                    else if (connected()) call.setResult(clean((WifiInfo) XposedHelpers.newInstance(WifiInfo.class), config.get()));
+                } catch (Throwable unavailable) { /* Never break the caller over a missing snapshot. */ }
             }
         });
         for (String name : new String[]{"writeToParcel", "toString"}) Hooks.all(WifiInfo.class, name, new XC_MethodHook() {
@@ -60,7 +70,7 @@ final class WifiHooks {
                 // The default constructor is hidden on API 29, public from API 30.
                 ScanResult result = (ScanResult) XposedHelpers.newInstance(ScanResult.class);
                 result.SSID = p.ssid; result.BSSID = p.bssid;
-                result.capabilities = "[WPA2-PSK-CCMP][ESS]"; result.level = -55;
+                result.capabilities = "[WPA2-PSK-CCMP][ESS]"; result.level = signal();
                 result.frequency = 2412; result.timestamp = SystemClock.elapsedRealtimeNanos() / 1000;
                 try { XposedHelpers.setObjectField(result, "wifiSsid", wifiSsid(p)); } catch (Throwable ignored) {}
                 ArrayList<ScanResult> virtual = new ArrayList<>(); virtual.add(result); call.setResult(virtual);
@@ -79,6 +89,44 @@ final class WifiHooks {
                 call.setResult(d);
             }
         });
+        transport();
+    }
+    /**
+     * Wi-Fi attendance checks ask the connectivity layer which transport carries them. Rewriting the
+     * transport answers, rather than the objects behind them, avoids touching the platform's
+     * 64-bit capability sets whose layout changed after Android 12.
+     */
+    private void transport() {
+        Hooks.all(NetworkCapabilities.class, "hasTransport", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam call) {
+                if (!connected() || call.hasThrowable() || call.args.length == 0 || !(call.args[0] instanceof Integer)) return;
+                int transport = (Integer) call.args[0];
+                if (transport == NetworkCapabilities.TRANSPORT_WIFI) call.setResult(true);
+                else if (transport == NetworkCapabilities.TRANSPORT_CELLULAR) call.setResult(false);
+            }
+        });
+        for (String name : new String[]{"getActiveNetworkInfo", "getNetworkInfo"})
+            Hooks.all(ConnectivityManager.class, name, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam call) {
+                    if (!connected() || call.hasThrowable() || !(call.getResult() instanceof android.net.NetworkInfo)) return;
+                    android.net.NetworkInfo source = (android.net.NetworkInfo) call.getResult();
+                    if (source.getType() == ConnectivityManager.TYPE_WIFI) return;
+                    call.setResult(connectedWifi());
+                }
+            });
+        Hooks.all(ConnectivityManager.class, "isActiveNetworkMetered", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam call) { if (connected()) call.setResult(false); }
+        });
+        Hooks.all(android.net.LinkProperties.class, "getInterfaceName", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam call) {
+                if (connected() && !call.hasThrowable()) call.setResult("wlan0");
+            }
+        });
+    }
+    private static android.net.NetworkInfo connectedWifi() {
+        android.net.NetworkInfo info = new android.net.NetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
+        info.setDetailedState(android.net.NetworkInfo.DetailedState.CONNECTED, null, null);
+        return info;
     }
     private interface Value { Object get(Profile p); }
     private void after(String name, Value value) {
@@ -97,7 +145,7 @@ final class WifiHooks {
     private static WifiInfo clean(WifiInfo source, Profile p) {
         WifiInfo result = (WifiInfo) XposedHelpers.newInstance(WifiInfo.class, source);
         field(result, "mWifiSsid", wifiSsid(p)); field(result, "mBSSID", p.bssid); field(result, "mMacAddress", p.wifiMac);
-        field(result, "mRssi", -55); field(result, "mFrequency", 2412); field(result, "mNetworkId", 1);
+        field(result, "mRssi", io.github.fakegeo.hook.system.WifiIdentity.signal(SystemClock.elapsedRealtime())); field(result, "mFrequency", 2412); field(result, "mNetworkId", 1);
         try { field(result, "mIpAddress", java.net.InetAddress.getByAddress(new byte[]{10, 0, 0, 2})); }
         catch (java.net.UnknownHostException impossible) { throw new AssertionError(impossible); }
         field(result, "mFqdn", null); field(result, "mProviderFriendlyName", null);

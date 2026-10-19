@@ -228,7 +228,8 @@ public final class RadioServiceHooks {
     public long connectivityFallbacks() { return connectivity.fallbacks(); }
     private static List<ScanResult> scans(Profile p) {
         ScanResult scan = (ScanResult) XposedHelpers.newInstance(ScanResult.class);
-        scan.SSID = p.ssid; scan.BSSID = p.bssid; scan.level = -55; scan.frequency = 2412;
+        scan.SSID = p.ssid; scan.BSSID = p.bssid; scan.level = WifiIdentity.signal(android.os.SystemClock.elapsedRealtime());
+        scan.frequency = 2412;
         scan.capabilities = "[WPA2-PSK-CCMP][ESS]"; scan.timestamp = android.os.SystemClock.elapsedRealtimeNanos() / 1000;
         XposedHelpers.setObjectField(scan, "wifiSsid", ssid(p));
         return new ArrayList<>(Collections.singletonList(scan));

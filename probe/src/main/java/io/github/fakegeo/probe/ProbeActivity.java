@@ -53,7 +53,17 @@ public final class ProbeActivity extends Activity {
         @Override public void onLocationResult(LocationResult result) { append("GMS 回调 #" + (++gmsCallbacks) + ": " + format(result.getLastLocation())); }
     };
     private final ScanCallback scanCallback = new ScanCallback() {
-        @Override public void onScanResult(int type, android.bluetooth.le.ScanResult result) { append("BLE 发现设备：" + result.getDevice()); }
+        @Override public void onScanResult(int type, android.bluetooth.le.ScanResult result) {
+            if (result == null) { append("BLE 回调返回空结果"); return; }
+            android.bluetooth.le.ScanRecord record = result.getScanRecord();
+            append("BLE 发现设备：" + result.getDevice() + " rssi=" + result.getRssi()
+                    + " 名称=" + (record == null ? "无" : record.getDeviceName())
+                    + " 厂商数据=" + (record == null ? "无" : record.getManufacturerSpecificData(0x004C))
+                    + " 原始广播=" + (record == null ? "无" : java.util.Arrays.toString(record.getBytes())));
+        }
+        @Override public void onBatchScanResults(java.util.List<android.bluetooth.le.ScanResult> results) {
+            for (android.bluetooth.le.ScanResult result : results) onScanResult(0, result);
+        }
         @Override public void onScanFailed(int error) { append("BLE 扫描错误：" + error); }
     };
     private final Runnable pollPending = new Runnable() {
@@ -76,6 +86,7 @@ public final class ProbeActivity extends Activity {
         button(body, "单次定位与预先取消检查", this::current);
         button(body, "GMS 最近位置与持续定位", this::startGms);
         button(body, "BLE 空扫描检查（观察 5 秒）", this::scan);
+        button(body, "考勤防作弊八项自检", this::audit);
         button(body, "停止定位并检查取消回调", this::stop);
         log = new TextView(this); log.setTextIsSelectable(true); body.addView(log);
         append("包名：" + getPackageName() + " · API " + Build.VERSION.SDK_INT);
@@ -92,7 +103,7 @@ public final class ProbeActivity extends Activity {
     }
     private void snapshot() {
         run("配置 IPC", () -> {
-            try (Cursor c = getContentResolver().query(Uri.parse("content://io.github.fakegeo.config/profile"), null, null, null, null)) {
+            try (Cursor c = getContentResolver().query(Uri.parse("content://" + BuildConfig.FG_AUTHORITY + "/profile"), null, null, null, null)) {
                 append(c != null && c.moveToFirst() ? "配置：" + c.getString(0) : "未读到配置");
             }
         });
@@ -164,9 +175,85 @@ public final class ProbeActivity extends Activity {
     private void stop() {
         run("停止", () -> {
             manager.removeUpdates(listener);
+            if (statusCallback != null) { manager.unregisterGnssStatusCallback((android.location.GnssStatus.Callback) statusCallback); statusCallback = null; }
             if (pending != null) { manager.removeUpdates(pending); pending.cancel(); pending = null; }
             fused.removeLocationUpdates(gmsCallback);
             append("已请求停止；随后不应再收到系统／GMS／PendingIntent 位置回调。");
+        });
+    }
+    private Object statusCallback;
+    /** The eight checks from the plan's verification matrix, reported the way an attendance SDK reads them. */
+    private void audit() {
+        run("1 系统与厂商定位一致性", () -> {
+            StringBuilder line = new StringBuilder();
+            for (String provider : new String[]{"gps", "network", "fused"}) {
+                Location fix = manager.getLastKnownLocation(provider);
+                line.append(provider).append(fix == null ? "=无 " : String.format(java.util.Locale.US, "=(%.6f,%.6f)±%.1fm ",
+                        fix.getLatitude(), fix.getLongitude(), fix.getAccuracy()));
+            }
+            append("三路定位：" + line + "（三路坐标应一致，并随时间有分米级变化）");
+        });
+        run("2/3 Mock 标志、时钟不确定度与 Extras", () -> {
+            Location fix = manager.getLastKnownLocation("gps");
+            if (fix == null) { append("gps 无缓存，请先运行一次持续定位"); return; }
+            boolean mock = Build.VERSION.SDK_INT >= 31 ? fix.isMock() : fix.isFromMockProvider();
+            Bundle extras = fix.getExtras();
+            append("isMock=" + mock + " · 时钟不确定度=" + (fix.hasElapsedRealtimeUncertaintyNanos()
+                    ? fix.getElapsedRealtimeUncertaintyNanos() + " ns" : "无")
+                    + " · satellites=" + (extras == null ? "无 Bundle" : extras.getInt("satellites"))
+                    + " · maxCn0=" + (extras == null ? "-" : extras.getFloat("maxCn0"))
+                    + " · meanCn0=" + (extras == null ? "-" : extras.getFloat("meanCn0")));
+        });
+        run("4 双频 GNSS 卫星状态", () -> {
+            android.location.GnssStatus.Callback callback = new android.location.GnssStatus.Callback() {
+                @Override public void onSatelliteStatusChanged(android.location.GnssStatus status) {
+                    int gps = 0, beidou = 0, dual = 0;
+                    for (int i = 0; i < status.getSatelliteCount(); i++) {
+                        int type = status.getConstellationType(i);
+                        if (type == android.location.GnssStatus.CONSTELLATION_GPS) gps++;
+                        if (type == android.location.GnssStatus.CONSTELLATION_BEIDOU) beidou++;
+                        if (status.hasCarrierFrequencyHz(i) && Math.abs(status.getCarrierFrequencyHz(i) - 1176.45e6f) < 1e3) dual++;
+                    }
+                    append("GNSS：" + status.getSatelliteCount() + " 颗 · GPS=" + gps + " · 北斗=" + beidou + " · L5/B2a=" + dual);
+                }
+            };
+            statusCallback = callback;
+            manager.registerGnssStatusCallback(callback, new Handler(Looper.getMainLooper()));
+            append("已注册 GNSS 状态回调，观察下方输出（应用兼容模式下应每秒一条）。");
+        });
+        run("5 Wi-Fi 打卡链路一致性", () -> {
+            WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            String connected = wifi.getConnectionInfo().getBSSID();
+            java.util.List<android.net.wifi.ScanResult> scans = wifi.getScanResults();
+            long newest = 0; String scanned = null;
+            for (android.net.wifi.ScanResult scan : scans) { newest = Math.max(newest, scan.timestamp); if (scanned == null) scanned = scan.BSSID; }
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            android.net.Network active = cm.getActiveNetwork();
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+            append("已连接=" + connected + " · 扫描首位=" + scanned + " · 扫描条数=" + scans.size()
+                    + " · 时间戳=" + newest + "（应与系统运行时间同量级且不断变大）");
+            append("能力：WIFI=" + (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI))
+                    + " · CELLULAR=" + (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR))
+                    + " · TransportInfo=" + (caps == null ? "无" : caps.getTransportInfo())
+                    + " · 计费=" + cm.isActiveNetworkMetered()
+                    + " · 网卡=" + (cm.getLinkProperties(active) == null ? "无" : cm.getLinkProperties(active).getInterfaceName()));
+        });
+        run("6 基站", () -> append("基站：" + ((TelephonyManager) getSystemService(TELEPHONY_SERVICE)).getAllCellInfo()));
+        run("7 坐标系偏移", () -> append("系统定位为 WGS84；本探针不含高德 SDK，请在飞书内直接看地图落点是否与选点一致。"));
+        run("8 模块痕迹", () -> {
+            append("开发者选项模拟定位开关=" + android.provider.Settings.Secure.getInt(getContentResolver(), "allow_mock_location", -999));
+            android.app.AppOpsManager ops = (android.app.AppOpsManager) getSystemService(APP_OPS_SERVICE);
+            append("AppOps mock_location=" + ops.unsafeCheckOpNoThrow("android:mock_location", android.os.Process.myUid(), getPackageName())
+                    + "（0=允许 1=忽略 2=报错）");
+            int frames = 0;
+            for (StackTraceElement frame : new Throwable().getStackTrace()) {
+                String owner = frame.getClassName() + frame.getFileName();
+                if (owner.contains("xposed") || owner.contains("lsposed") || owner.contains("fakegeo") || owner.contains("LSPHooker")) frames++;
+            }
+            append("调用栈中的模块痕迹=" + frames + " 帧");
+            try (Cursor c = getContentResolver().query(Uri.parse("content://" + BuildConfig.FG_AUTHORITY + "/profile"), null, null, null, null)) {
+                append("配置 Provider：" + (c == null ? "未解析（无痕）" : c.moveToFirst() ? "可读取（说明仍在走 Provider）" : "空结果"));
+            }
         });
     }
     private String format(Location location) {

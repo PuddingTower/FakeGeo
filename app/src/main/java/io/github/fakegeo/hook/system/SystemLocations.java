@@ -7,8 +7,20 @@ import java.util.Collections;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
-final class SystemLocations {
+public final class SystemLocations {
     private SystemLocations() {}
+    /** Shared GPS quality metadata so the system and per-app delivery paths never disagree. */
+    public static android.os.Bundle metadata(Profile p, String provider) {
+        android.os.Bundle metadata = new android.os.Bundle();
+        metadata.putBoolean("mockLocation", false);
+        if (p.gnss && "gps".equals(provider)) {
+            GnssPayload sky = GnssPayload.current();
+            metadata.putInt("satellites", sky.count);
+            metadata.putFloat("meanCn0", sky.meanCn0);
+            metadata.putFloat("maxCn0", sky.maxCn0);
+        }
+        return metadata;
+    }
     static String provider(Object value, String fallback) throws ReflectiveOperationException {
         Object last = value;
         if (value instanceof java.util.List) {
@@ -33,14 +45,9 @@ final class SystemLocations {
         result.setAccuracy(sample.accuracy); result.setVerticalAccuracyMeters(sample.accuracy);
         result.setSpeed(sample.speed); result.setBearing(sample.bearing); result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
         result.setTime(System.currentTimeMillis()); result.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+        result.setElapsedRealtimeUncertaintyNanos(GnssPayload.current().uncertaintyNanos());
         if (android.os.Build.VERSION.SDK_INT >= 31) result.setMock(false);
-        android.os.Bundle metadata = new android.os.Bundle();
-        metadata.putBoolean("mockLocation", false);
-        if (p.gnss && provider.equals("gps")) {
-            metadata.putInt("satellites", GnssPayload.COUNT);
-            metadata.putFloat("meanCn0", GnssPayload.MEAN_CN0);
-            metadata.putFloat("maxCn0", GnssPayload.MAX_CN0);
-        }
+        android.os.Bundle metadata = metadata(p, provider);
         result.setExtras(metadata);
         if (android.os.Build.VERSION.SDK_INT == 29) {
             // Android 10 derives coarse positions from this internal extra.

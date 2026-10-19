@@ -38,6 +38,10 @@ public final class ServiceConfig {
                 if (!file.isFile() || file.length() > 65536) throw new java.io.IOException("系统配置未发布或不可读取");
                 json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             } else {
+                // The bridge avoids resolving the module provider from a service process, which fails
+                // under package-visibility isolation; the provider remains the fallback.
+                String bridged = ConfigBridgeClient.read(context, ConfigBinderBridge.KIND_PROFILE);
+                if (bridged != null) { profile.update(bridged); error = ""; loggedFailure = false; return; }
                 try (Cursor cursor = context.getContentResolver().query(ConfigStore.URI, null, null, null, null)) {
                     if (cursor == null || !cursor.moveToFirst()) throw new java.io.IOException("配置 Provider 不可读取");
                     json = cursor.getString(0);

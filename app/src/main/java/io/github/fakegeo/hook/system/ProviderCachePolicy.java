@@ -28,6 +28,7 @@ public final class ProviderCachePolicy {
                 && a.accuracy==b.accuracy && a.altitude==b.altitude && a.ssid.equals(b.ssid)
                 && a.bssid.equals(b.bssid) && a.wifiMac.equals(b.wifiMac) && a.bluetoothMac.equals(b.bluetoothMac)
                 && a.bluetoothName.equals(b.bluetoothName) && a.targets.equals(b.targets)
+                && a.wifiConnected==b.wifiConnected && a.beaconEnabled()==b.beaconEnabled()
                 && a.locationCacheTarget.equals(b.locationCacheTarget);
     }
     private ProviderCachePolicy() {}

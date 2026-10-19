@@ -35,14 +35,19 @@ public final class ConnectivityHooks {
                 try {
                     XposedBridge.hookMethod(method, new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam call) {
-                            if (call.hasThrowable() || !(call.getResult() instanceof NetworkCapabilities)
-                                    || !config.active() || !config.get().wifi
-                                    || !CallerPolicy.application((Integer) call.args[uidIndex])) return;
+                            if (call.hasThrowable() || !(call.getResult() instanceof NetworkCapabilities)) return;
+                            io.github.fakegeo.config.Profile p = config.get();
+                            if (!config.active() || !p.wifi || !CallerPolicy.application((Integer) call.args[uidIndex])) return;
                             NetworkCapabilities source = (NetworkCapabilities) call.getResult();
-                            if (!source.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-                                    && !(source.getTransportInfo() instanceof android.net.wifi.WifiInfo)) return;
-                            try { call.setResult(WifiIdentity.copy(source, config.get())); replacements.incrementAndGet(); }
-                            catch (Throwable failure) {
+                            boolean attached = source.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                                    || source.getTransportInfo() instanceof android.net.wifi.WifiInfo;
+                            // Attendance Wi-Fi checks also run while the radio is on mobile data.
+                            if (!attached && !(p.wifiConnected && source.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))) return;
+                            try {
+                                call.setResult(attached ? io.github.fakegeo.hook.system.WifiIdentity.copy(source, p)
+                                        : io.github.fakegeo.hook.system.WifiIdentity.connected(source, p));
+                                replacements.incrementAndGet();
+                            } catch (Throwable failure) {
                                 error(method.getName(), failure);
                                 try { call.setResult(WifiIdentity.withoutIdentity(source)); fallbacks.incrementAndGet(); }
                                 catch (Throwable fallbackFailure) {
