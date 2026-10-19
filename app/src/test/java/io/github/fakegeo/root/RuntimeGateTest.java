@@ -50,7 +50,7 @@ public class RuntimeGateTest {
         assertThrows(IllegalStateException.class, () -> RuntimeGate.requireWifiConnectivity(current));
         current.put("wifiConnectivityProtected", true); RuntimeGate.requireWifiConnectivity(current);
     }
-    @Test public void motionNeedsNewSystemCodeRatherThanThePreviousUiOnlyVersion() throws Exception {
+    @Test public void olderSystemBuildsCannotBeEnabledAfterAnApkUpdate() throws Exception {
         for(String version:new String[]{"0.3.1","0.3.4","0.3.6","0.3.7"}) {
             JSONObject status=new JSONObject().put("moduleVersion",version).put("reportedAt",100000);
             assertThrows(IllegalStateException.class,()->RuntimeGate.requireCurrent(status,100001));
@@ -60,11 +60,5 @@ public class RuntimeGateTest {
         JSONObject report=new JSONObject();
         assertThrows(IllegalStateException.class,()->RuntimeGate.requireRealGps(report));
         report.put("realGpsCaptureSupported",true);RuntimeGate.requireRealGps(report);
-    }
-    @Test public void joystickRequiresTheCacheContinuityFixEvenOnAnAcceptedBaseline() throws Exception {
-        JSONObject report=new JSONObject().put("moduleVersion",ModuleVersion.SYSTEM_BASELINE).put("reportedAt",100000);
-        RuntimeGate.requireCurrent(report,100001);
-        assertThrows(IllegalStateException.class,()->RuntimeGate.requireMotionContinuity(report));
-        report.put("motionCacheContinuitySupported",true);RuntimeGate.requireMotionContinuity(report);
     }
 }

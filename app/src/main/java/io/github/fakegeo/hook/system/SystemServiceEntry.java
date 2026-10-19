@@ -30,6 +30,9 @@ public final class SystemServiceEntry {
                     status.put("revision", config.get().revision); status.put("enabled", config.active());
                     status.put("configError", config.error()); status.put("hooks", new org.json.JSONArray(coverage));
                     status.put("errors", new org.json.JSONArray(errors));
+                    status.put("wifiAnchors", config.get().wifiPoints.size());
+                    status.put("bleAnchors", config.get().blePoints.size());
+                    status.put("cellAnchors", config.get().cellPoints.size());
                     android.os.Bundle data = new android.os.Bundle(); data.putString("json", status.toString());
                     context.getContentResolver().call(io.github.fakegeo.config.ConfigStore.URI, "report_service", name, data);
                 } catch (Exception unavailable) { /* The module may be locked/stopped or not granted yet. */ }

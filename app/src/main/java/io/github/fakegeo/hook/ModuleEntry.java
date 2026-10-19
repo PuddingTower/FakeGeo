@@ -38,7 +38,6 @@ public final class ModuleEntry implements IXposedHookLoadPackage {
                     return;
                 }
                 RuntimeConfig config = new RuntimeConfig((Context) call.args[0]);
-                install("sensors", () -> new SensorHooks(new RuntimeConfig((Context) call.args[0], true)).install());
                 if (config.get().systemMode) return;
                 install("location", () -> new LocationHooks(config).install());
                 install("concealment", () -> new AntiDetectionHooks(config).install());

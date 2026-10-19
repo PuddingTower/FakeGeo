@@ -24,14 +24,14 @@ public final class OnboardingActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL); page.setBackgroundColor(UiKit.BACKGROUND);
-        page.addView(UiKit.toolbar(this, "欢迎使用 FakeGeo", this::finish));
+        page.addView(UiKit.toolbar(this, "欢迎使用 拟境", this::finish));
         ScrollView scroll = new ScrollView(this); LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(24), dp(12), dp(24), dp(24)); scroll.addView(body); page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(page); UiKit.insetPage(page);
         add(body, "三步完成初始设置", 25, true);
-        add(body, "FakeGeo 免费开源。按下面的步骤准备 Root、系统 Hook 和地图服务。", 14, false);
+        add(body, "拟境免费开源。按下面的步骤准备 Root、系统 Hook 和地图服务。", 14, false);
         add(body, "1 · Root 授权", 19, true);
-        rootState = add(body, "点击按钮，在 KernelSU 或 Root 管理器中允许 FakeGeo。", 14, false);
+        rootState = add(body, "点击按钮，在 KernelSU 或 Root 管理器中允许拟境。", 14, false);
         request = button(body, "请求 Root 授权", () -> {
             rootState.setText("正在请求 Root 授权…"); request.setEnabled(false);
             worker.execute(() -> {
@@ -43,7 +43,7 @@ public final class OnboardingActivity extends Activity {
             });
         });
         add(body, "2 · LSPosed 系统作用域", 19, true);
-        lspState = add(body, "在 LSPosed 启用 FakeGeo 并勾选系统作用域。Root 授权不能代替这一步。", 14, false);
+        lspState = add(body, "在 LSPosed 启用拟境 并勾选系统作用域。Root 授权不能代替这一步。", 14, false);
         button(body, "配置 LSPosed", this::showScopes);
         check = button(body, "检查系统 Hook", this::checkHook);
         add(body, "3 · 高德地图与搜索", 19, true);
@@ -62,7 +62,7 @@ public final class OnboardingActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); if (rootState != null && SetupPreferences.accepted(this)) refresh(); }
     private void refresh() {
-        rootState.setText(SetupPreferences.rootSeen(this) ? "此前已完成 Root 授权，可点击授权按钮重新确认。" : "尚未完成 Root 授权，请在 Root 管理器中允许 FakeGeo。");
+        rootState.setText(SetupPreferences.rootSeen(this) ? "此前已完成 Root 授权，可点击授权按钮重新确认。" : "尚未完成 Root 授权，请在 Root 管理器中允许拟境。");
         boolean key = !MapPreferences.key(this).isEmpty();
         mapState.setText(key ? (MapPreferences.consent(this) ? "Key 已填写，高德服务已同意；实际可用性以地图与搜索结果为准。" : "Key 已填写，请在高德设置中同意高德服务。") : "尚未填写 Android SDK Key，请打开高德设置。");
         if (SetupPreferences.rootSeen(this)) checkHook();
@@ -81,7 +81,7 @@ public final class OnboardingActivity extends Activity {
     }
     private void showScopes() {
         new AlertDialog.Builder(this).setTitle("LSPosed 系统作用域")
-                .setMessage("启用 FakeGeo 并选择：\n• Android 系统／系统框架\n• 电话服务\n• 蓝牙服务\n• Wi-Fi 服务（列表存在时）\n\n首次设置后重启手机。系统模式无需勾选目标 App。")
+                .setMessage("启用拟境 并选择：\n• Android 系统／系统框架\n• 电话服务\n• 蓝牙服务\n• Wi-Fi 服务（列表存在时）\n\n首次设置后重启手机。系统模式无需勾选目标 App。")
                 .setPositiveButton("打开 LSPosed", (dialog, which) -> {
                     Intent manager = getPackageManager().getLaunchIntentForPackage("org.lsposed.manager");
                     if (manager != null) startActivity(manager);

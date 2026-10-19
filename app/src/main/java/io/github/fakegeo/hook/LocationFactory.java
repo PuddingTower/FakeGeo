@@ -5,6 +5,7 @@ import android.os.SystemClock;
 import io.github.fakegeo.config.Profile;
 import io.github.fakegeo.hook.system.GnssPayload;
 import io.github.fakegeo.hook.system.SystemLocations;
+import io.github.fakegeo.location.DriftModel;
 
 final class LocationFactory {
     private LocationFactory() {}
@@ -21,10 +22,10 @@ final class LocationFactory {
         return result;
     }
     private static void apply(Location result, Profile profile) {
-        io.github.fakegeo.motion.MotionModel.Sample sample=io.github.fakegeo.motion.MotionModel.sample(profile,SystemClock.elapsedRealtime(),System.currentTimeMillis());
+        DriftModel.Sample sample = DriftModel.sample(profile, SystemClock.elapsedRealtime());
         result.setLatitude(sample.latitude); result.setLongitude(sample.longitude);
         result.setAltitude(sample.altitude); result.setAccuracy(sample.accuracy);
-        result.setSpeed(sample.speed); result.setBearing(sample.bearing);
+        result.setSpeed(0f); result.setBearing(0f);
         result.setVerticalAccuracyMeters(sample.accuracy);
         result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
         result.setElapsedRealtimeUncertaintyNanos(GnssPayload.current().uncertaintyNanos());

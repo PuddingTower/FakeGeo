@@ -79,7 +79,7 @@ public final class ProbeActivity extends Activity {
         fused = LocationServices.getFusedLocationProviderClient(this);
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(20, 48, 20, 24);
         ScrollView scroll = new ScrollView(this); scroll.addView(body); setContentView(scroll);
-        TextView title = new TextView(this); title.setText("FakeGeo Probe\n验证系统模式时，请勿把本 App 加入 LSPosed 作用域"); title.setTextSize(20); body.addView(title);
+        TextView title = new TextView(this); title.setText("拟境探针\n验证系统模式时，请勿把本 App 加入 LSPosed 作用域"); title.setTextSize(20); body.addView(title);
         button(body, "申请权限", this::permissions);
         button(body, "读取配置／位置／无线快照", this::snapshot);
         button(body, "系统持续定位 + PendingIntent", this::startSystem);

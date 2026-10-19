@@ -14,8 +14,7 @@ public final class WifiIdentity {
     private WifiIdentity() {}
     /** Shared with the per-app hooks so both paths report the same fading signal. */
     public static int signal(long elapsedRealtime) {
-        double t = elapsedRealtime / 1000.0;
-        return -45 + (int) Math.round(3 * Math.sin(t / 5.0)); // -48 .. -42 dBm
+        return io.github.fakegeo.hook.WifiScanFactory.signal(elapsedRealtime);
     }
     /**
      * Answers a cellular network as the attendance access point. Only reachable from a system
@@ -27,18 +26,18 @@ public final class WifiIdentity {
         XposedHelpers.callMethod(result, "addTransport", NetworkCapabilities.TRANSPORT_WIFI);
         WifiInfo identity = identity(p);
         XposedHelpers.callMethod(result, "setTransportInfo", identity);
-        set(result, "mSSID", "\"" + p.ssid.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
+        set(result, "mSSID", io.github.fakegeo.hook.WifiScanFactory.quotedSsid(p.primaryWifi.ssid));
         return result;
     }
     /** A fresh WifiInfo for a network the radio is not actually joined to. */
     private static WifiInfo identity(Profile p) {
         try {
             Object builder = XposedHelpers.newInstance(Class.forName("android.net.wifi.WifiInfo$Builder"));
-            XposedHelpers.callMethod(builder, "setSsid", p.ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            XposedHelpers.callMethod(builder, "setBssid", android.net.MacAddress.fromString(p.bssid));
+            XposedHelpers.callMethod(builder, "setSsid", p.primaryWifi.ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            XposedHelpers.callMethod(builder, "setBssid", android.net.MacAddress.fromString(p.primaryWifi.bssid));
             XposedHelpers.callMethod(builder, "setMacAddress", android.net.MacAddress.fromString(p.wifiMac));
-            XposedHelpers.callMethod(builder, "setRssi", signal(android.os.SystemClock.elapsedRealtime()));
-            XposedHelpers.callMethod(builder, "setFrequency", 2412);
+            XposedHelpers.callMethod(builder, "setRssi", io.github.fakegeo.hook.WifiScanFactory.signal(p.primaryWifi));
+            XposedHelpers.callMethod(builder, "setFrequency", p.primaryWifi.frequency);
             XposedHelpers.callMethod(builder, "setNetworkId", 1);
             return (WifiInfo) XposedHelpers.callMethod(builder, "build");
         } catch (Throwable olderLayout) {
@@ -55,11 +54,12 @@ public final class WifiIdentity {
         }
         // Keep privacy sentinels produced by Android's permission filtering.
         if (visible(source.getSSID()) && !"<unknown ssid>".equals(source.getSSID()))
-            set(result, "mWifiSsid", ssid(p.ssid));
-        if (visibleMac(source.getBSSID())) set(result, "mBSSID", p.bssid);
+            set(result, "mWifiSsid", ssid(p.primaryWifi.ssid));
+        if (visibleMac(source.getBSSID())) set(result, "mBSSID", p.primaryWifi.bssid);
         if (visibleMac(source.getMacAddress())) set(result, "mMacAddress", p.wifiMac);
         // The connected signal must match the fabricated scan entry, not the real router distance.
-        optional(result, "mRssi", signal(android.os.SystemClock.elapsedRealtime()));
+        optional(result, "mRssi", io.github.fakegeo.hook.WifiScanFactory.signal(p.primaryWifi));
+        optional(result, "mFrequency", p.primaryWifi.frequency);
         optional(result, "mNetworkId", source.getNetworkId() < 0 ? -1 : 1);
         // These are independently serialized; changing SSID/BSSID alone leaves real identities.
         for (String name : new String[]{"mNetworkKey", "mPasspointUniqueId", "mFqdn",
@@ -76,7 +76,7 @@ public final class WifiIdentity {
         if (transport instanceof WifiInfo) set(result, "mTransportInfo", copy((WifiInfo) transport, p));
         Object name = get(result, "mSSID");
         if (name != null && (source.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || transport instanceof WifiInfo))
-            set(result, "mSSID", "\"" + p.ssid.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
+            set(result, "mSSID", io.github.fakegeo.hook.WifiScanFactory.quotedSsid(p.primaryWifi.ssid));
         Object specifier = get(result, "mNetworkSpecifier");
         if (specifier != null && specifier.getClass().getName().startsWith("android.net.wifi."))
             set(result, "mNetworkSpecifier", null);
@@ -101,11 +101,7 @@ public final class WifiIdentity {
     }
     private static boolean visibleMac(String value) { return visible(value) && !"02:00:00:00:00:00".equals(value); }
     private static Object ssid(String value) throws ReflectiveOperationException {
-        Class<?> type = Class.forName("android.net.wifi.WifiSsid");
-        java.lang.reflect.Method method;
-        try { method = type.getDeclaredMethod("fromBytes", byte[].class); }
-        catch (NoSuchMethodException old) { method = type.getDeclaredMethod("createFromByteArray", byte[].class); }
-        method.setAccessible(true); return method.invoke(null, (Object) value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return io.github.fakegeo.hook.WifiScanFactory.wifiSsid(value);
     }
     private static Field field(Object object, String name) throws NoSuchFieldException {
         for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {

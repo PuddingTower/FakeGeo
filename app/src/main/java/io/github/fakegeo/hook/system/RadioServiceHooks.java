@@ -53,16 +53,24 @@ public final class RadioServiceHooks {
                     if (!cell()) return;
                     for (int i = 0; i < call.args.length; i++) {
                         Object arg = call.args[i];
-                        if (arg instanceof List && method.contains("CellInfo")) call.args[i] = new ArrayList<>();
-                        else if (arg != null && arg.getClass().getName().startsWith("android.telephony.CellIdentity")) {
+                        if (arg instanceof List && method.contains("CellInfo")) {
+                            Profile profile = config.get();
+                            call.args[i] = profile.hasCellEnvironment()
+                                    ? io.github.fakegeo.hook.CellFactory.build(castCells(arg), profile)
+                                    : new ArrayList<>();
+                        } else if (arg != null && arg.getClass().getName().startsWith("android.telephony.CellIdentity")) {
                             try { call.args[i] = XposedHelpers.newInstance(arg.getClass()); }
                             catch (Throwable failure) { error("cell identity", failure); }
                         } else if (arg instanceof android.os.Bundle && method.contains("CellLocation")) {
-                            android.os.Bundle empty = new android.os.Bundle();
-                            empty.putInt("lac", -1); empty.putInt("cid", -1); empty.putInt("psc", -1);
-                            empty.putInt("baseStationId", -1); empty.putInt("baseStationLatitude", Integer.MAX_VALUE);
-                            empty.putInt("baseStationLongitude", Integer.MAX_VALUE); empty.putInt("systemId", -1); empty.putInt("networkId", -1);
-                            call.args[i] = empty;
+                            Profile profile = config.get();
+                            if (profile.hasCellEnvironment()) call.args[i] = io.github.fakegeo.hook.CellFactory.legacyBundle(profile);
+                            else {
+                                android.os.Bundle empty = new android.os.Bundle();
+                                empty.putInt("lac", -1); empty.putInt("cid", -1); empty.putInt("psc", -1);
+                                empty.putInt("baseStationId", -1); empty.putInt("baseStationLatitude", Integer.MAX_VALUE);
+                                empty.putInt("baseStationLongitude", Integer.MAX_VALUE); empty.putInt("systemId", -1); empty.putInt("networkId", -1);
+                                call.args[i] = empty;
+                            }
                         }
                     }
                 }
@@ -74,10 +82,20 @@ public final class RadioServiceHooks {
     }
     public void installPhone() {
         Class<?> phone = find("com.android.phone.PhoneInterfaceManager", loader);
-        for (String method : new String[]{"getAllCellInfo", "getNeighboringCellInfo"})
-            afterTyped(phone, method, this::cell, (declared, value) -> value == null ? null : ReturnValues.listResult(declared.getReturnType(), Collections.emptyList()));
+        afterTyped(phone, "getAllCellInfo", this::cell, (declared, value) -> {
+            if (value == null) return null;
+            Profile profile = config.get();
+            return profile.hasCellEnvironment()
+                    ? ReturnValues.listResult(declared.getReturnType(),
+                        io.github.fakegeo.hook.CellFactory.build(castCells(value), profile))
+                    : ReturnValues.listResult(declared.getReturnType(), Collections.emptyList());
+        });
+        afterTyped(phone, "getNeighboringCellInfo", this::cell,
+                (declared, value) -> value == null ? null : ReturnValues.listResult(declared.getReturnType(), Collections.emptyList()));
         after(phone, "getCellLocation", this::cell, value -> {
             if (value instanceof android.os.Bundle) {
+                Profile profile = config.get();
+                if (profile.hasCellEnvironment()) return io.github.fakegeo.hook.CellFactory.legacyBundle(profile);
                 android.os.Bundle bundle = new android.os.Bundle(); bundle.putInt("lac", -1); bundle.putInt("cid", -1); bundle.putInt("psc", -1); return bundle;
             }
             return value == null ? null : XposedHelpers.newInstance(value.getClass());
@@ -91,8 +109,12 @@ public final class RadioServiceHooks {
                     Object delegate = call.args[i];
                     call.args[i] = Proxy.newProxyInstance(callbackType.getClassLoader(), new Class<?>[]{callbackType}, (proxy, method, args) -> {
                         Object[] forwarded = args == null ? null : args.clone();
-                        if (cell() && method.getName().equals("onCellInfo") && forwarded != null && forwarded.length > 0)
-                            forwarded[0] = new ArrayList<>();
+                        if (cell() && method.getName().equals("onCellInfo") && forwarded != null && forwarded.length > 0) {
+                            Profile profile = config.get();
+                            forwarded[0] = profile.hasCellEnvironment()
+                                    ? io.github.fakegeo.hook.CellFactory.build(castCells(forwarded[0]), profile)
+                                    : new ArrayList<>();
+                        }
                         try { return method.invoke(delegate, forwarded); }
                         catch (InvocationTargetException failure) { throw failure.getCause(); }
                     });
@@ -213,12 +235,6 @@ public final class RadioServiceHooks {
         String message = stage + ": " + failure.getClass().getSimpleName() + ": " + failure.getMessage();
         if (errors.size() < 12 && !errors.contains(message)) { errors.add(message); XposedBridge.log("FakeGeo: radio " + message); }
     }
-    private static Object ssid(Profile p) {
-        Class<?> type = XposedHelpers.findClass("android.net.wifi.WifiSsid", null);
-        byte[] bytes = p.ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        try { return XposedHelpers.callStaticMethod(type, "fromBytes", bytes); }
-        catch (Throwable old) { return XposedHelpers.callStaticMethod(type, "createFromByteArray", bytes); }
-    }
     private static WifiInfo cleanWifi(WifiInfo source, Profile p) {
         try { return WifiIdentity.copy(source, p); }
         catch (ReflectiveOperationException failure) { throw new IllegalStateException("Wi-Fi identity copy failed", failure); }
@@ -226,12 +242,11 @@ public final class RadioServiceHooks {
     public boolean connectivityProtected() { return connectivity.protectedRecipients(); }
     public long connectivityReplacements() { return connectivity.replacements(); }
     public long connectivityFallbacks() { return connectivity.fallbacks(); }
+    @SuppressWarnings("unchecked")
+    private static List<android.telephony.CellInfo> castCells(Object value) {
+        return value instanceof List ? (List<android.telephony.CellInfo>) value : null;
+    }
     private static List<ScanResult> scans(Profile p) {
-        ScanResult scan = (ScanResult) XposedHelpers.newInstance(ScanResult.class);
-        scan.SSID = p.ssid; scan.BSSID = p.bssid; scan.level = WifiIdentity.signal(android.os.SystemClock.elapsedRealtime());
-        scan.frequency = 2412;
-        scan.capabilities = "[WPA2-PSK-CCMP][ESS]"; scan.timestamp = android.os.SystemClock.elapsedRealtimeNanos() / 1000;
-        XposedHelpers.setObjectField(scan, "wifiSsid", ssid(p));
-        return new ArrayList<>(Collections.singletonList(scan));
+        return io.github.fakegeo.hook.WifiScanFactory.results(p);
     }
 }

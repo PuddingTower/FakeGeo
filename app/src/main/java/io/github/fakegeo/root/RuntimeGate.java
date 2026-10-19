@@ -24,8 +24,4 @@ public final class RuntimeGate {
         if(!status.optBoolean("realGpsCaptureSupported"))
             throw new IllegalStateException("真实位置入口需要新版系统 Hook，请重启手机后重试。");
     }
-    public static void requireMotionContinuity(JSONObject status) {
-        if(!status.optBoolean("motionCacheContinuitySupported"))
-            throw new IllegalStateException("悬浮移动需要新版系统 Hook，请重启手机后重试。");
-    }
 }

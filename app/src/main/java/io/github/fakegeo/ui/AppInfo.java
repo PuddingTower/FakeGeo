@@ -4,7 +4,7 @@ public final class AppInfo {
     public static final String AUTHOR = "myxuebi";
     public static final String REPOSITORY = "https://github.com/myxuebi/FakeGeo";
     public static final String RELEASES = REPOSITORY + "/releases";
-    public static final String NOTICE = "FakeGeo 是免费开源软件，作者：myxuebi。无需付费购买或激活。\n\n"
+    public static final String NOTICE = "拟境（FakeGeo）是免费开源软件，作者：myxuebi。无需付费购买或激活。\n\n"
             + "源代码：" + REPOSITORY + "\n\n"
             + "使用说明与免责声明\n"
             + "1. 本软件用于开发、测试与学习。请遵守适用法律及相关平台规则，仅在获授权的设备和场景中使用；不得用于欺骗、侵权或其他违规活动。\n\n"

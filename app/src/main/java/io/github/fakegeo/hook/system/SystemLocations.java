@@ -3,6 +3,7 @@ package io.github.fakegeo.hook.system;
 import android.location.Location;
 import android.os.SystemClock;
 import io.github.fakegeo.config.Profile;
+import io.github.fakegeo.location.DriftModel;
 import java.util.Collections;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -40,10 +41,10 @@ public final class SystemLocations {
     }
     static Location create(Profile p, String provider) {
         Location result = new Location(provider);
-        io.github.fakegeo.motion.MotionModel.Sample sample=io.github.fakegeo.motion.MotionModel.sample(p,SystemClock.elapsedRealtime(),System.currentTimeMillis());
+        DriftModel.Sample sample = DriftModel.sample(p, SystemClock.elapsedRealtime());
         result.setLatitude(sample.latitude); result.setLongitude(sample.longitude); result.setAltitude(sample.altitude);
         result.setAccuracy(sample.accuracy); result.setVerticalAccuracyMeters(sample.accuracy);
-        result.setSpeed(sample.speed); result.setBearing(sample.bearing); result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
+        result.setSpeed(0f); result.setBearing(0f); result.setSpeedAccuracyMetersPerSecond(0.2f); result.setBearingAccuracyDegrees(2);
         result.setTime(System.currentTimeMillis()); result.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
         result.setElapsedRealtimeUncertaintyNanos(GnssPayload.current().uncertaintyNanos());
         if (android.os.Build.VERSION.SDK_INT >= 31) result.setMock(false);

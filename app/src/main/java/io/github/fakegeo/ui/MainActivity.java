@@ -50,7 +50,7 @@ public final class MainActivity extends Activity {
     private TextView title,address,coordinates,status,emptyTitle,emptyDescription;
     private EditText search;
     private Button action,stop,configure;
-    private View settings,pin,recenter,movement;
+    private View settings,pin,recenter;
     private Button realPosition;
     private io.github.fakegeo.location.RealPositionFinder realFinder;
     private MapView mapView;
@@ -75,7 +75,7 @@ public final class MainActivity extends Activity {
         buildScreen(); refreshCard();
     }
     private void buildScreen() {
-        screen=new FrameLayout(this); screen.setBackgroundColor(0xFFEAF0ED); setContentView(screen);
+        screen=new FrameLayout(this); screen.setBackgroundColor(UiKit.BACKGROUND); setContentView(screen);
         mapHost=new FrameLayout(this); screen.addView(mapHost,new FrameLayout.LayoutParams(-1,-1));
         empty=new LinearLayout(this); empty.setOrientation(LinearLayout.VERTICAL); empty.setGravity(Gravity.CENTER); empty.setPadding(dp(32),0,dp(32),dp(100));
         View symbol=UiKit.icon(this,UiKit.PIN); empty.addView(symbol,new LinearLayout.LayoutParams(dp(44),dp(54)));
@@ -85,27 +85,25 @@ public final class MainActivity extends Activity {
         mapHost.addView(empty,new FrameLayout.LayoutParams(-1,-1));
 
         top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.setClipChildren(false); top.setClipToPadding(false);
-        LinearLayout searchBox=new LinearLayout(this); searchBox.setGravity(Gravity.CENTER_VERTICAL); searchBox.setPadding(dp(16),0,dp(4),0); searchBox.setBackground(UiKit.rounded(Color.WHITE,18)); searchBox.setElevation(0);
+        LinearLayout searchBox=new LinearLayout(this); searchBox.setGravity(Gravity.CENTER_VERTICAL); searchBox.setPadding(dp(16),0,dp(4),0); searchBox.setBackground(UiKit.surface(this,18)); searchBox.setElevation(0);
         search=new EditText(this); search.setHint("搜索地址、地标或建筑"); search.setTextSize(15); search.setTextColor(UiKit.INK); search.setHintTextColor(UiKit.MUTED); search.setSingleLine(true); search.setBackgroundColor(Color.TRANSPARENT); search.setPadding(0,0,dp(4),0); search.setImeOptions(EditorInfo.IME_ACTION_SEARCH); search.setInputType(android.text.InputType.TYPE_CLASS_TEXT); searchBox.addView(search,new LinearLayout.LayoutParams(0,-1,1));
-        View submit=UiKit.icon(this,UiKit.SEARCH); submit.setPadding(dp(13),dp(13),dp(13),dp(13)); submit.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x20087F73),UiKit.rounded(0xFFE8F3F0,14),null)); submit.setContentDescription("搜索地址"); searchBox.addView(submit,new LinearLayout.LayoutParams(dp(48),dp(48))); submit.setOnClickListener(v->search());
+        View submit=UiKit.icon(this,UiKit.SEARCH); submit.setPadding(dp(13),dp(13),dp(13),dp(13)); submit.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(UiKit.rippleColor()),UiKit.surfaceVariant(this,14),null)); submit.setContentDescription("搜索地址"); searchBox.addView(submit,new LinearLayout.LayoutParams(dp(48),dp(48))); submit.setOnClickListener(v->search());
         search.setOnEditorActionListener((view,id,event)-> { if(id==EditorInfo.IME_ACTION_SEARCH || event!=null && event.getKeyCode()==android.view.KeyEvent.KEYCODE_ENTER && event.getAction()==android.view.KeyEvent.ACTION_UP) { search(); return true; } return false; });
         top.addView(searchBox,new LinearLayout.LayoutParams(0,-1,1));
-        settings=UiKit.icon(this,UiKit.SETTINGS); settings.setPadding(dp(13),dp(13),dp(13),dp(13)); settings.setBackground(UiKit.rounded(Color.WHITE,18)); settings.setElevation(0); settings.setContentDescription("高级设置"); LinearLayout.LayoutParams gear=new LinearLayout.LayoutParams(dp(56),-1); gear.leftMargin=dp(10); top.addView(settings,gear); settings.setOnClickListener(v->startActivity(new Intent(this,AdvancedSettingsActivity.class)));
+        View environments=UiKit.icon(this,UiKit.ENV); environments.setPadding(dp(13),dp(13),dp(13),dp(13)); environments.setBackground(UiKit.surface(this,18)); environments.setElevation(0); environments.setContentDescription("环境指纹"); LinearLayout.LayoutParams envLayout=new LinearLayout.LayoutParams(dp(56),-1); envLayout.leftMargin=dp(10); top.addView(environments,envLayout); environments.setOnClickListener(v->startActivity(new Intent(this,EnvironmentActivity.class)));
+        settings=UiKit.icon(this,UiKit.SETTINGS); settings.setPadding(dp(13),dp(13),dp(13),dp(13)); settings.setBackground(UiKit.surface(this,18)); settings.setElevation(0); settings.setContentDescription("高级设置"); LinearLayout.LayoutParams gear=new LinearLayout.LayoutParams(dp(56),-1); gear.leftMargin=dp(10); top.addView(settings,gear); settings.setOnClickListener(v->startActivity(new Intent(this,AdvancedSettingsActivity.class)));
         FrameLayout.LayoutParams header=new FrameLayout.LayoutParams(-1,dp(56),Gravity.TOP); header.leftMargin=dp(20); header.rightMargin=dp(20); header.topMargin=dp(20); screen.addView(top,header);
 
-        results=new ScrollView(this); results.setBackground(UiKit.rounded(Color.WHITE,18)); results.setElevation(dp(8)); results.setVisibility(View.GONE); results.setFillViewport(false); resultRows=new LinearLayout(this); resultRows.setOrientation(LinearLayout.VERTICAL); results.addView(resultRows);
+        results=new ScrollView(this); results.setBackground(UiKit.surface(this,18)); results.setElevation(0); results.setVisibility(View.GONE); results.setFillViewport(false); resultRows=new LinearLayout(this); resultRows.setOrientation(LinearLayout.VERTICAL); results.addView(resultRows);
         FrameLayout.LayoutParams list=new FrameLayout.LayoutParams(-1,dp(272),Gravity.TOP); list.leftMargin=dp(20); list.rightMargin=dp(20); list.topMargin=dp(88); screen.addView(results,list);
 
         pin=UiKit.icon(this,UiKit.PIN); pin.setVisibility(View.GONE); FrameLayout.LayoutParams marker=new FrameLayout.LayoutParams(dp(36),dp(44),Gravity.CENTER); screen.addView(pin,marker); pin.setTranslationY(-dp(16)); pin.setContentDescription("地图中心选点");
-        recenter=UiKit.icon(this,UiKit.TARGET); recenter.setPadding(dp(12),dp(12),dp(12),dp(12)); recenter.setBackground(UiKit.rounded(Color.WHITE,15)); recenter.setElevation(dp(5)); recenter.setVisibility(View.GONE); recenter.setContentDescription("回到已发布位置"); FrameLayout.LayoutParams target=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.END|Gravity.BOTTOM); target.rightMargin=dp(20); target.bottomMargin=dp(262); screen.addView(recenter,target); recenter.setOnClickListener(v->{ Profile p=ConfigStore.published(this); if(p.latitude!=0 || p.longitude!=0) { geocodeGeneration++; latitude=p.latitude; longitude=p.longitude; hasPoint=true; selectedTitle=MapPreferences.label(this,latitude,longitude); selectedAddress=""; MapPreferences.draft(this,localRevision,latitude,longitude); refreshCard(); moveToWgs(p.latitude,p.longitude); } });
+        recenter=UiKit.icon(this,UiKit.TARGET); recenter.setPadding(dp(12),dp(12),dp(12),dp(12)); recenter.setBackground(UiKit.surface(this,15)); recenter.setElevation(0); recenter.setVisibility(View.GONE); recenter.setContentDescription("回到已发布位置"); FrameLayout.LayoutParams target=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.END|Gravity.BOTTOM); target.rightMargin=dp(20); target.bottomMargin=dp(262); screen.addView(recenter,target); recenter.setOnClickListener(v->{ Profile p=ConfigStore.published(this); if(p.latitude!=0 || p.longitude!=0) { geocodeGeneration++; latitude=p.latitude; longitude=p.longitude; hasPoint=true; selectedTitle=MapPreferences.label(this,latitude,longitude); selectedAddress=""; MapPreferences.draft(this,localRevision,latitude,longitude); refreshCard(); moveToWgs(p.latitude,p.longitude); } });
 
-        movement=UiKit.button(this,"悬浮摇杆",false); movement.setElevation(dp(5));
-        FrameLayout.LayoutParams moveButton=new FrameLayout.LayoutParams(dp(128),dp(48),Gravity.START|Gravity.BOTTOM);moveButton.leftMargin=dp(20);moveButton.bottomMargin=dp(262);screen.addView(movement,moveButton);
-        movement.setOnClickListener(v->startActivity(new Intent(this,MovementSettingsActivity.class)));
         realPosition=UiKit.button(this,"真实位置",false);realPosition.setElevation(dp(5));realPosition.setContentDescription("将地图准星移到当前真实位置");
         FrameLayout.LayoutParams realButton=new FrameLayout.LayoutParams(dp(112),dp(48),Gravity.END|Gravity.BOTTOM);realButton.rightMargin=dp(20);realButton.bottomMargin=dp(262);screen.addView(realPosition,realButton);
         realPosition.setOnClickListener(v->findRealPosition());
-        bottom=new LinearLayout(this); bottom.setOrientation(LinearLayout.VERTICAL); bottom.setPadding(dp(22),dp(18),dp(22),dp(20)); bottom.setBackground(UiKit.rounded(Color.WHITE,24)); bottom.setElevation(dp(12));
+        bottom=new LinearLayout(this); bottom.setOrientation(LinearLayout.VERTICAL); bottom.setPadding(dp(22),dp(18),dp(22),dp(20)); bottom.setBackground(UiKit.surface(this,24)); bottom.setElevation(0);
         status=UiKit.text(this,"虚拟定位未开启",12,UiKit.ACCENT,true); bottom.addView(status);
         title=UiKit.text(this,"选择你想去的位置",20,UiKit.INK,true); title.setMaxLines(1); title.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams titleLayout=new LinearLayout.LayoutParams(-1,-2); titleLayout.topMargin=dp(10); bottom.addView(title,titleLayout);
         address=UiKit.text(this,"搜索地址，或拖动地图设置选点",13,UiKit.MUTED,false); address.setMaxLines(2); address.setEllipsize(android.text.TextUtils.TruncateAt.END); LinearLayout.LayoutParams info=new LinearLayout.LayoutParams(-1,-2); info.topMargin=dp(6); bottom.addView(address,info);
@@ -122,8 +120,7 @@ public final class MainActivity extends Activity {
             ((FrameLayout.LayoutParams)results.getLayoutParams()).topMargin=up+dp(82); results.requestLayout();
             ((FrameLayout.LayoutParams)bottom.getLayoutParams()).bottomMargin=down+dp(12); bottom.requestLayout();
             ((FrameLayout.LayoutParams)recenter.getLayoutParams()).bottomMargin=down+dp(318); recenter.requestLayout();
-            ((FrameLayout.LayoutParams)realPosition.getLayoutParams()).bottomMargin=down+dp(258);realPosition.requestLayout();
-            ((FrameLayout.LayoutParams)movement.getLayoutParams()).bottomMargin=down+dp(258);movement.requestLayout();return insets;
+            ((FrameLayout.LayoutParams)realPosition.getLayoutParams()).bottomMargin=down+dp(258);realPosition.requestLayout();return insets;
         }); screen.requestApplyInsets();
     }
     @Override protected void onResume() {
@@ -148,7 +145,7 @@ public final class MainActivity extends Activity {
         try {
             MapsInitializer.updatePrivacyShow(this,true,true); MapsInitializer.updatePrivacyAgree(this,true); MapsInitializer.setApiKey(key);
             ServiceSettings.updatePrivacyShow(this,true,true); ServiceSettings.updatePrivacyAgree(this,true); ServiceSettings.getInstance().setApiKey(key);
-            MapView view=new MapView(this); view.onCreate(initialState); initialState=null; mapView=view; mapHost.addView(view,0,new FrameLayout.LayoutParams(-1,-1)); map=view.getMap(); loadedKey=key;
+            MapView view=new MapView(this); view.onCreate(initialState); initialState=null; mapView=view; mapHost.addView(view,0,new FrameLayout.LayoutParams(-1,-1)); map=view.getMap(); map.setMapType(AMap.MAP_TYPE_NIGHT); loadedKey=key;
             map.getUiSettings().setZoomControlsEnabled(false); map.getUiSettings().setRotateGesturesEnabled(false); map.getUiSettings().setTiltGesturesEnabled(false); map.getUiSettings().setCompassEnabled(false);
             map.getUiSettings().setLogoBottomMargin(dp(248));
             double[] point=hasPoint?Gcj02.fromWgs84(latitude,longitude):new double[]{39.9092,116.3975}; map.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(point[0],point[1]),16));
@@ -219,7 +216,7 @@ public final class MainActivity extends Activity {
                         row.addView(UiKit.text(MainActivity.this,item.getTitle(),16,UiKit.INK,true));
                         String detail=(item.getCityName()==null?"":item.getCityName())+(item.getAdName()==null?"":item.getAdName())+(item.getSnippet()==null?"":item.getSnippet()); TextView desc=UiKit.text(MainActivity.this,detail,12,UiKit.MUTED,false); desc.setPadding(0,dp(5),0,0); row.addView(desc); resultRows.addView(row);
                         row.setOnClickListener(v->{ cameraSelection=false; geocodeGeneration++; results.setVisibility(View.GONE); LatLonPoint value=item.getLatLonPoint(); LatLng selected=new LatLng(value.getLatitude(),value.getLongitude()); choose(selected,item.getTitle(),detail); map.animateCamera(CameraUpdateFactory.newLatLngZoom(selected,17)); });
-                        View line=new View(MainActivity.this); line.setBackgroundColor(0xFFEFF3F2); resultRows.addView(line,new LinearLayout.LayoutParams(-1,dp(1)));
+                        View line=new View(MainActivity.this); line.setBackgroundColor(UiKit.OUTLINE); resultRows.addView(line,new LinearLayout.LayoutParams(-1,dp(1)));
                     }
                 }
             }); finder.searchPOIAsyn();
@@ -228,7 +225,7 @@ public final class MainActivity extends Activity {
     private void resultMessage(String value) { TextView text=UiKit.text(this,value,14,UiKit.MUTED,false); text.setPadding(dp(18),dp(24),dp(18),dp(24)); resultRows.addView(text); }
     private void refreshCard() {
         Profile published=ConfigStore.published(this); boolean changed=hasPoint && (Math.abs(published.latitude-latitude)>1e-7 || Math.abs(published.longitude-longitude)>1e-7);
-        status.setText(published.enabled?(changed?"●  运行中 · 新位置待应用":"●  虚拟定位已开启"):"○  虚拟定位未开启");
+        status.setText(published.enabled?(published.environment!=null?"●  运行中 · "+published.environment.name:(changed?"●  运行中 · 新位置待应用":"●  虚拟定位已开启")):"○  虚拟定位未开启");
         title.setText(hasPoint?(selectedTitle.isEmpty()?"地图选点":selectedTitle):"选择你想去的位置");
         address.setText(hasPoint?(selectedAddress.isEmpty()?"拖动地图调整，或搜索具体地址":selectedAddress):"搜索地址，或拖动地图设置选点");
         coordinates.setText(hasPoint?String.format(Locale.US,"%.6f, %.6f",latitude,longitude):"尚未选择位置");
@@ -245,14 +242,13 @@ public final class MainActivity extends Activity {
         try {
             Profile previous=ConfigStore.load(this); JSONObject json=previous.json();
             json.put("enabled",enable).put("revision",Math.max(System.currentTimeMillis(),previous.revision+1));
-            io.github.fakegeo.motion.MotionModel.clear(json);
             if(enable) json.put("latitude",latitude).put("longitude",longitude);
             Profile next=new Profile(json); busy=true; refreshCard();
             worker.execute(()-> {
                 Exception error=null;
                 try { io.github.fakegeo.root.RootProfilePublisher.publishUser(MainActivity.this,next); } catch(Exception failure) { error=failure; }
                 Exception outcome=error;
-                runOnUiThread(()-> { if(isDestroyed()) return; busy=false; if(outcome==null) { localRevision=ConfigStore.published(MainActivity.this).revision; stopService(new Intent(MainActivity.this,io.github.fakegeo.motion.JoystickService.class)); MapPreferences.draft(MainActivity.this,localRevision,latitude,longitude); MapPreferences.label(MainActivity.this,latitude,longitude,selectedAddress.isEmpty()?selectedTitle:selectedAddress); toast(enable?"虚拟定位配置已应用":"虚拟定位已停止"); }
+                runOnUiThread(()-> { if(isDestroyed()) return; busy=false; if(outcome==null) { localRevision=ConfigStore.published(MainActivity.this).revision; MapPreferences.draft(MainActivity.this,localRevision,latitude,longitude); MapPreferences.label(MainActivity.this,latitude,longitude,selectedAddress.isEmpty()?selectedTitle:selectedAddress); toast(enable?"虚拟定位配置已应用":"虚拟定位已停止"); }
                     else new AlertDialog.Builder(MainActivity.this).setTitle(enable?"暂时无法开启":"停止未完成").setMessage(outcome.getMessage()).setPositiveButton("知道了",null).setNeutralButton("高级设置",(dialog,which)->startActivity(new Intent(MainActivity.this,AdvancedSettingsActivity.class))).show(); refreshCard(); });
             });
         } catch(Exception failure) { busy=false; refreshCard(); toast(failure.getMessage()); }

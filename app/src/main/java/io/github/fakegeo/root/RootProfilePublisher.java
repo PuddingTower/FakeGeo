@@ -9,15 +9,12 @@ import org.json.JSONObject;
 /** Shared configuration publication; cache clearing is a separate explicit action. */
 public final class RootProfilePublisher {
     private static final String SCRIPT = RootCommands.DIRECTORY + "/location-cache.sh";
-    private static final String LEGACY_SCRIPT = RootCommands.DIRECTORY + "/campus-location-cache.sh";
     private static final String LAST = RootCommands.DIRECTORY + "/location-cache-last";
-    private static final String LEGACY_LAST = RootCommands.DIRECTORY + "/campus-cache-last";
     private RootProfilePublisher() {}
 
     public static String publishUser(Context context, Profile requested) throws Exception {
         synchronized (ConfigStore.class) {
             JSONObject json=requested.json();
-            io.github.fakegeo.motion.MotionModel.clear(json);
             json.put("revision",Math.max(System.currentTimeMillis(),Math.max(ConfigStore.published(context).revision,ConfigStore.load(context).revision)+1));
             return publish(context,new Profile(json));
         }
@@ -47,12 +44,9 @@ public final class RootProfilePublisher {
             if (report.optBoolean("enabled") || ConfigStore.published(context).enabled)
                 throw new IllegalStateException("请先停止虚拟环境并确认系统已禁用，再恢复缓存。");
             return RootBridge.execute(namespace(install(context)
-                    + installAsset(context, "campus-location-cache.sh", LEGACY_SCRIPT)
                     + "if [ -f '" + LAST + "' ] && [ ! -L '" + LAST + "' ]; then\n"
                     + "fg_last=$(sed -n '1p' '" + LAST + "')\nfg_package=$(sed -n '2p' '" + LAST + "')\n"
                     + "/system/bin/sh '" + SCRIPT + "' restore \"$fg_last\" \"$fg_package\"\n"
-                    + "elif [ -f '" + LEGACY_LAST + "' ] && [ ! -L '" + LEGACY_LAST + "' ]; then\n"
-                    + "fg_last=$(cat '" + LEGACY_LAST + "')\n/system/bin/sh '" + LEGACY_SCRIPT + "' restore \"$fg_last\"\n"
                     + "else echo CACHE_BACKUP_MISSING; exit 1; fi\n"));
         }
     }

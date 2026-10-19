@@ -3,10 +3,8 @@ package io.github.fakegeo.hook;
 import android.net.ConnectivityManager;
 import android.net.DhcpInfo;
 import android.net.NetworkCapabilities;
-import android.net.wifi.ScanResult;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.os.SystemClock;
 import java.util.ArrayList;
 import io.github.fakegeo.config.Profile;
 import de.robv.android.xposed.XC_MethodHook;
@@ -20,13 +18,10 @@ final class WifiHooks {
     private boolean active() { Profile p = config.get(); return p.enabled && p.wifi; }
     /** The "attendance Wi-Fi is connected" story, even while the radio is on 5G. */
     private boolean connected() { Profile p = config.get(); return p.enabled && p.wifi && p.wifiConnected; }
-    private static int signal() {
-        return io.github.fakegeo.hook.system.WifiIdentity.signal(SystemClock.elapsedRealtime());
-    }
     void install() {
-        after("getSSID", p -> "\"" + p.ssid.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
-        after("getBSSID", p -> p.bssid); after("getMacAddress", p -> p.wifiMac);
-        after("getRssi", p -> signal()); after("getFrequency", p -> 2412);
+        after("getSSID", p -> quotedSsid(p.primaryWifi.ssid));
+        after("getBSSID", p -> p.primaryWifi.bssid); after("getMacAddress", p -> p.wifiMac);
+        after("getRssi", p -> WifiScanFactory.signal(p.primaryWifi)); after("getFrequency", p -> p.primaryWifi.frequency);
         after("getIpAddress", p -> 0x0200000A); // 10.0.0.2 in Android's little-endian representation.
         after("getNetworkId", p -> 1);
         after("getPasspointFqdn", p -> null); after("getPasspointProviderFriendlyName", p -> null);
@@ -66,14 +61,7 @@ final class WifiHooks {
         Hooks.all(WifiManager.class, "getScanResults", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam call) {
                 if (!active() || call.hasThrowable()) return;
-                Profile p = config.get();
-                // The default constructor is hidden on API 29, public from API 30.
-                ScanResult result = (ScanResult) XposedHelpers.newInstance(ScanResult.class);
-                result.SSID = p.ssid; result.BSSID = p.bssid;
-                result.capabilities = "[WPA2-PSK-CCMP][ESS]"; result.level = signal();
-                result.frequency = 2412; result.timestamp = SystemClock.elapsedRealtimeNanos() / 1000;
-                try { XposedHelpers.setObjectField(result, "wifiSsid", wifiSsid(p)); } catch (Throwable ignored) {}
-                ArrayList<ScanResult> virtual = new ArrayList<>(); virtual.add(result); call.setResult(virtual);
+                call.setResult(new ArrayList<>(WifiScanFactory.results(config.get())));
             }
         });
         Hooks.all(WifiManager.class, "getConfiguredNetworks", new XC_MethodHook() {
@@ -136,16 +124,12 @@ final class WifiHooks {
             }
         });
     }
-    private static Object wifiSsid(Profile p) {
-        Class<?> type = XposedHelpers.findClass("android.net.wifi.WifiSsid", null);
-        byte[] bytes = p.ssid.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        try { return XposedHelpers.callStaticMethod(type, "fromBytes", bytes); }
-        catch (Throwable oldApi) { return XposedHelpers.callStaticMethod(type, "createFromByteArray", bytes); }
-    }
+    private static Object wifiSsid(Profile p) { return WifiScanFactory.wifiSsid(p.primaryWifi.ssid); }
+    private static String quotedSsid(String value) { return WifiScanFactory.quotedSsid(value); }
     private static WifiInfo clean(WifiInfo source, Profile p) {
         WifiInfo result = (WifiInfo) XposedHelpers.newInstance(WifiInfo.class, source);
-        field(result, "mWifiSsid", wifiSsid(p)); field(result, "mBSSID", p.bssid); field(result, "mMacAddress", p.wifiMac);
-        field(result, "mRssi", io.github.fakegeo.hook.system.WifiIdentity.signal(SystemClock.elapsedRealtime())); field(result, "mFrequency", 2412); field(result, "mNetworkId", 1);
+        field(result, "mWifiSsid", wifiSsid(p)); field(result, "mBSSID", p.primaryWifi.bssid); field(result, "mMacAddress", p.wifiMac);
+        field(result, "mRssi", WifiScanFactory.signal(p.primaryWifi)); field(result, "mFrequency", p.primaryWifi.frequency); field(result, "mNetworkId", 1);
         try { field(result, "mIpAddress", java.net.InetAddress.getByAddress(new byte[]{10, 0, 0, 2})); }
         catch (java.net.UnknownHostException impossible) { throw new AssertionError(impossible); }
         field(result, "mFqdn", null); field(result, "mProviderFriendlyName", null);

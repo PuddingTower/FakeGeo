@@ -13,14 +13,13 @@ import android.os.Bundle;
 public final class ConfigProvider extends ContentProvider {
     @Override public boolean onCreate() { return true; }
     @Override public Cursor query(Uri uri, String[] projection, String selection, String[] args, String order) {
-        boolean sensors = ConfigStore.SENSOR_URI.equals(uri);
-        if (!sensors && !ConfigStore.URI.equals(uri)) throw new IllegalArgumentException("Unknown URI");
+        if (!ConfigStore.URI.equals(uri)) throw new IllegalArgumentException("Unknown URI");
         Profile profile = ConfigStore.load(getContext());
         Profile published = ConfigStore.published(getContext());
         String[] packages = getContext().getPackageManager().getPackagesForUid(Binder.getCallingUid());
         MatrixCursor cursor = new MatrixCursor(new String[]{"json"}, 1);
         // Removal from the allowlist immediately returns disabled state without exposing the profile.
-        cursor.addRow(new Object[]{ProfileAccess.snapshot(sensors,Binder.getCallingUid()==Process.myUid(),packages,profile,published).json().toString()});
+        cursor.addRow(new Object[]{ProfileAccess.snapshot(Binder.getCallingUid()==Process.myUid(),packages,profile,published).json().toString()});
         return cursor;
     }
     @Override public String getType(Uri uri) { return "vnd.android.cursor.item/vnd.fakegeo.profile"; }

@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BASH = sys.argv[1] if len(sys.argv) > 1 else "bash"
 MANUAL = len(sys.argv) > 2 and sys.argv[2] == "manual"
 GENERIC = len(sys.argv) > 2 and sys.argv[2] in ("generic", "manual")
-PRODUCTION = len(sys.argv) > 2 and sys.argv[2] in ("production", "generic", "manual")
+# The campus-run cache script was removed with the campus feature; production mode is retired.
+PRODUCTION = False
 PACKAGE = "org.example.selected" if GENERIC else "com.wisedu.cpdaily"
 PREFIX = "manual-location-cache-" if MANUAL else "location-cache-" if GENERIC else "campus-cache-"
 REVISION = "1790849051000"

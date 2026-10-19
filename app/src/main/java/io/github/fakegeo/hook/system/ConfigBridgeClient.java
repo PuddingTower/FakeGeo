@@ -8,14 +8,13 @@ import de.robv.android.xposed.XposedHelpers;
 /** Client half of {@link ConfigBinderBridge}; null means "ask the ContentProvider instead". */
 public final class ConfigBridgeClient {
     private ConfigBridgeClient() {}
-    public static String read(Context context, int kind) {
+    public static String read(Context context) {
         if (context == null) return null;
         Parcel data = Parcel.obtain(), reply = Parcel.obtain();
         try {
             IBinder binder = locationBinder(context);
             if (binder == null) return null;
             data.writeInt(ConfigBinderBridge.MAGIC);
-            data.writeInt(kind);
             // An older system runtime does not know the code, so the transaction simply fails.
             if (!binder.transact(ConfigBinderBridge.TRANSACTION, data, reply, 0)) return null;
             reply.setDataPosition(0);

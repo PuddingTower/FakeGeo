@@ -6,12 +6,11 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class LocationCacheSelectionTest {
-    @Test public void oldSelectionMigratesWithoutKeepingAutomaticCleanup() throws Exception {
-        Profile old = new Profile(new JSONObject().put("campusCacheRefresh", true));
-        assertEquals("com.wisedu.cpdaily", old.locationCacheTarget);
-        assertFalse(old.json().has("locationCacheRefresh"));
-        assertFalse(old.json().has("campusCacheRefresh"));
-        Profile next = new Profile(old.json().put("locationCacheTarget", "org.example.app"));
+    @Test public void obsoleteCampusCleanupFlagNoLongerSelectsAnApp() throws Exception {
+        Profile legacy = new Profile(new JSONObject().put("campusCacheRefresh", true));
+        assertEquals("", legacy.locationCacheTarget);
+        assertFalse(legacy.json().has("campusCacheRefresh"));
+        Profile next = new Profile(legacy.json().put("locationCacheTarget", "org.example.app"));
         assertEquals("org.example.app", Profile.parse(next.json().toString()).locationCacheTarget);
     }
     @Test public void onlyOneValidatedNonProtectedPackageCanBeSelected() throws Exception {

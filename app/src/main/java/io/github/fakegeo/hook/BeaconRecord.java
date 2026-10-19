@@ -39,6 +39,16 @@ public final class BeaconRecord {
         for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
         return bytes;
     }
+    /** A legacy advertising packet for a captured device that only exposed a name. */
+    public static byte[] named(String name) {
+        if (name == null || name.isEmpty()) return new byte[0];
+        List<Byte> out = new ArrayList<>();
+        structure(out, TYPE_FLAGS, (byte) 0x06);
+        byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 29) return new byte[0];
+        structure(out, TYPE_NAME, bytes);
+        return out.size() <= 31 ? bytes(out) : new byte[0];
+    }
     /** {@code ScanRecord.parseFromBytes} is not public API, so fall back to filling its fields. */
     public static Object record(byte[] raw) throws ReflectiveOperationException {
         Class<?> type = android.bluetooth.le.ScanRecord.class;

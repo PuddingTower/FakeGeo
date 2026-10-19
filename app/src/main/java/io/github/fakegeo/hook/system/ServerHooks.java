@@ -32,7 +32,6 @@ public final class ServerHooks {
     private long nextLocation, delivered, nextStatus, observedRevision;
     private boolean previouslyActive;
     private Profile observedProfile;
-    private long motionCacheContinuations;
     private SystemGnss gnss;
     private SystemDeliveryGuard delivery;
     private RadioServiceHooks radio;
@@ -129,7 +128,6 @@ public final class ServerHooks {
             nextLocation = now;
             // Coarse caches otherwise keep the previous real/virtual point for several minutes.
             if (ProviderCachePolicy.clear(observedProfile,p)) clearVirtualCaches();
-            else if(active && p.revision!=observedRevision) motionCacheContinuations++;
         }
         observedRevision = p.revision; previouslyActive = active;
         observedProfile=p;
@@ -214,8 +212,6 @@ public final class ServerHooks {
         JSONObject status = new JSONObject();
         status.put("moduleVersion", io.github.fakegeo.config.ModuleVersion.CURRENT);
         status.put("realGpsCaptureSupported",true);
-        status.put("motionCacheContinuitySupported",true);
-        status.put("motionCacheContinuations",motionCacheContinuations);
         status.put("api", Build.VERSION.SDK_INT); status.put("pid", android.os.Process.myPid());
         status.put("reportedAt", System.currentTimeMillis()); status.put("revision", p.revision);
         status.put("enabled", config.active()); status.put("configError", config.error());
@@ -223,6 +219,10 @@ public final class ServerHooks {
         status.put("reportCount", delivered); status.put("errors", new JSONArray(errors));
         status.put("gnss", p.gnss); status.put("gnssReportCount", gnss.reports());
         status.put("gnssCaptured", gnss.captured());
+        status.put("environment", p.environment == null ? "" : p.environment.id);
+        status.put("wifiAnchors", p.wifiPoints.size());
+        status.put("bleAnchors", p.blePoints.size());
+        status.put("cellAnchors", p.cellPoints.size());
         status.put("cacheReadReplacements", delivery.cacheReads());
         status.put("deliveryReplacements", delivery.deliveries());
         status.put("deliveryDrops", delivery.drops());

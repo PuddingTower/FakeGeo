@@ -24,7 +24,6 @@ import de.robv.android.xposed.XposedHelpers;
 public final class ConfigBinderBridge extends XC_MethodHook {
     public static final int TRANSACTION = IBinder.FIRST_CALL_TRANSACTION + 1000;
     public static final int MAGIC = 0x46474731; // "FGG1"
-    public static final int KIND_PROFILE = 0, KIND_SENSORS = 1;
     private static final long CACHE_MS = 3000;
     private final ServiceConfig config;
     private final List<String> coverage, errors;
@@ -59,13 +58,12 @@ public final class ConfigBinderBridge extends XC_MethodHook {
         int start = data.dataPosition();
         boolean ours = false;
         try {
-            if (data.dataAvail() < 8) { call.setResult(false); return; }
+            if (data.dataAvail() < 4) { call.setResult(false); return; }
             data.setDataPosition(0);
             ours = data.readInt() == MAGIC;
             if (!ours) return;
-            int kind = data.readInt();
             Profile published = config.get();
-            Set<String> allowlist = kind == KIND_SENSORS ? published.sensorTargets : published.targets;
+            Set<String> allowlist = published.targets;
             boolean authorized = published.enabled && ownsAny(Binder.getCallingUid(), allowlist);
             // Always consume the transaction and report the verdict; the client falls back to the
             // ContentProvider when it is not listed, which keeps the draft/publish edge case working.

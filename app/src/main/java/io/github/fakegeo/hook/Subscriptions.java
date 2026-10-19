@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import io.github.fakegeo.config.Profile;
+import io.github.fakegeo.location.DriftModel;
 import de.robv.android.xposed.XposedBridge;
 
 /** Each queued delivery checks cancellation again on the caller's executor. */
@@ -67,7 +68,7 @@ final class Subscriptions {
             Profile p = config.get();
             if (gate.finished(SystemClock.elapsedRealtime()) || !p.enabled || !p.location || !config.locationAllowed()) { finish(this); return; }
             float[] distance = new float[1];
-            io.github.fakegeo.motion.MotionModel.Sample sample=io.github.fakegeo.motion.MotionModel.sample(p,SystemClock.elapsedRealtime(),System.currentTimeMillis());
+            DriftModel.Sample sample = DriftModel.sample(p, SystemClock.elapsedRealtime());
             if (delivered) Location.distanceBetween(lastLatitude, lastLongitude, sample.latitude, sample.longitude, distance);
             if ((!delivered || minDistance <= 0 || distance[0] >= minDistance) && gate.queue(SystemClock.elapsedRealtime())) {
                 try {
@@ -77,7 +78,7 @@ final class Subscriptions {
                             Profile current = config.get();
                             if (gate.mayDeliver(SystemClock.elapsedRealtime()) && current.enabled && current.location && config.locationAllowed()) {
                                 Location fix=LocationFactory.create(current, key.provider);
-                                io.github.fakegeo.motion.MotionModel.Sample currentPoint=io.github.fakegeo.motion.MotionModel.sample(current,SystemClock.elapsedRealtime(),System.currentTimeMillis());
+                                DriftModel.Sample currentPoint=DriftModel.sample(current,SystemClock.elapsedRealtime());
                                 delivery.accept(fix); success = true;
                                 lastLatitude = currentPoint.latitude; lastLongitude = currentPoint.longitude;
                             }

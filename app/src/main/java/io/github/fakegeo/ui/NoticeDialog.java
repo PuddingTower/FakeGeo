@@ -16,7 +16,7 @@ final class NoticeDialog {
         text.setLineSpacing(UiKit.dp(activity, 5), 1); scroll.addView(text);
         int height = Math.min(UiKit.dp(activity, 380), Math.round(activity.getResources().getDisplayMetrics().heightPixels * 0.48f));
         body.addView(scroll, new LinearLayout.LayoutParams(-1, height));
-        CheckBox read = new CheckBox(activity); read.setText("我已阅读、理解并同意以上说明");
+        CheckBox read = new CheckBox(activity); read.setText("我已阅读、理解并同意以上说明"); read.setTextColor(UiKit.INK);
         if (required) body.addView(read);
         AlertDialog.Builder builder = new AlertDialog.Builder(activity).setTitle("免费开源 · 使用说明").setView(body);
         if (required) builder.setPositiveButton("同意并继续", null).setNegativeButton("不同意，退出", (d, w) -> activity.finishAffinity()).setCancelable(false);

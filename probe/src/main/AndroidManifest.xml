@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
-    <application android:label="FakeGeo Probe" android:theme="@android:style/Theme.Material.Light.NoActionBar"
+    <application android:label="拟境探针" android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:icon="@drawable/ic_launcher">
         <receiver android:name=".ProbeReceiver" android:exported="false" />
         <activity android:name=".ProbeActivity" android:exported="true">

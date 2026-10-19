@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import io.github.fakegeo.config.Profile;
 import io.github.fakegeo.hook.system.GnssPayload;
 import io.github.fakegeo.hook.system.SystemLocations;
+import io.github.fakegeo.location.DriftModel;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -30,7 +31,7 @@ final class LocationHooks {
     void install() {
         scalar("getLatitude", p -> sample(p).latitude); scalar("getLongitude", p -> sample(p).longitude);
         scalar("getAltitude", p -> sample(p).altitude); scalar("getAccuracy", p -> sample(p).accuracy);
-        scalar("getSpeed", p -> sample(p).speed); scalar("getBearing", p -> sample(p).bearing);
+        scalar("getSpeed", p -> 0f); scalar("getBearing", p -> 0f);
         scalar("getVerticalAccuracyMeters", p -> sample(p).accuracy);
         scalar("getSpeedAccuracyMetersPerSecond", p -> 0.2f); scalar("getBearingAccuracyDegrees", p -> 2f);
         scalar("hasAltitude", p -> true); scalar("hasAccuracy", p -> true);
@@ -152,8 +153,8 @@ final class LocationHooks {
         gnss.install();
     }
     interface Value { Object get(Profile p); }
-    private static io.github.fakegeo.motion.MotionModel.Sample sample(Profile p) {
-        return io.github.fakegeo.motion.MotionModel.sample(p,android.os.SystemClock.elapsedRealtime(),System.currentTimeMillis());
+    private static DriftModel.Sample sample(Profile p) {
+        return DriftModel.sample(p, android.os.SystemClock.elapsedRealtime());
     }
     private void scalar(String name, Value value) {
         Hooks.all(Location.class, name, new XC_MethodHook() {

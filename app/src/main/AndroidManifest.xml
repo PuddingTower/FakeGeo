@@ -6,26 +6,28 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <application android:label="FakeGeo" android:theme="@style/AppTheme"
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <application android:label="拟境" android:theme="@style/AppTheme"
         android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules"
-        android:icon="@drawable/ic_launcher" android:directBootAware="true" android:supportsRtl="true">
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
+        android:directBootAware="true" android:supportsRtl="true">
         <meta-data android:name="xposedmodule" android:value="true" />
-        <meta-data android:name="xposeddescription" android:value="地图选点与系统定位、电话、Wi-Fi、蓝牙服务 Hook" />
+        <meta-data android:name="xposeddescription" android:value="环境模拟：定位与 Wi-Fi、蓝牙、基站指纹 Hook" />
         <meta-data android:name="xposedminversion" android:value="82" />
         <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
+        <activity android:name=".ui.EnvironmentActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".ui.AdvancedSettingsActivity" android:exported="false" />
         <activity android:name=".ui.MapSettingsActivity" android:exported="false" />
         <activity android:name=".ui.OnboardingActivity" android:exported="false" />
-        <activity android:name=".ui.MovementSettingsActivity" android:exported="false" />
-        <service android:name=".motion.JoystickService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="specialUse" android:directBootAware="false">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-controlled floating joystick for virtual location testing; stops when control is closed" />
-        </service>
         <receiver android:name=".config.BootReceiver" android:exported="false" android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />

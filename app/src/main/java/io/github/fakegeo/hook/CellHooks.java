@@ -9,6 +9,7 @@ import android.os.Build;
 import android.telephony.gsm.GsmCellLocation;
 import android.telephony.cdma.CdmaCellLocation;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executor;
 import io.github.fakegeo.config.Profile;
 import de.robv.android.xposed.XC_MethodHook;
@@ -39,12 +40,17 @@ final class CellHooks {
         for (String name : new String[]{"getAllCellInfo", "getNeighboringCellInfo"})
             Hooks.all(TelephonyManager.class, name, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam call) {
-                    if (active() && !call.hasThrowable()) call.setResult(new ArrayList<>());
+                    if (!active() || call.hasThrowable()) return;
+                    if (name.equals("getAllCellInfo")) call.setResult(injected(call.getResult()));
+                    else call.setResult(new ArrayList<>());
                 }
             });
         Hooks.all(TelephonyManager.class, "getCellLocation", new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam call) {
-                if (active() && !call.hasThrowable()) call.setResult(CellLocation.getEmpty());
+                if (!active() || call.hasThrowable()) return;
+                Profile profile = config.get();
+                CellLocation fake = profile.hasCellEnvironment() ? CellFactory.legacyLocation(profile) : null;
+                call.setResult(fake != null ? fake : CellLocation.getEmpty());
             }
         });
         Hooks.all(TelephonyManager.class, "requestCellInfoUpdate", new XC_MethodHook() {
@@ -53,7 +59,8 @@ final class CellHooks {
                 Executor executor = LocationHooks.find(call.args, Executor.class);
                 TelephonyManager.CellInfoCallback callback = LocationHooks.find(call.args, TelephonyManager.CellInfoCallback.class);
                 if (executor != null && callback != null) {
-                    executor.execute(() -> callback.onCellInfo(new ArrayList<CellInfo>())); call.setResult(null);
+                    executor.execute(() -> callback.onCellInfo(injected(null)));
+                    call.setResult(null);
                 }
             }
         });
@@ -77,7 +84,7 @@ final class CellHooks {
             sentinel(type, "getMobileNetworkOperator", null);
             for (String name : new String[]{"writeToParcel", "toString"}) Hooks.all(type, name, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam call) throws Throwable {
-                    if (!active() || original.get()) return;
+                    if (!active() || original.get() || config.get().hasCellEnvironment()) return;
                     original.set(true);
                     try {
                         Object empty = XposedHelpers.newInstance(call.thisObject.getClass());
@@ -93,9 +100,12 @@ final class CellHooks {
             for (String name : new String[]{"onCellInfoChanged", "onCellLocationChanged"}) Hooks.all(current, name, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam call) {
                     if (!active() || call.args.length == 0) return;
-                    if (name.equals("onCellInfoChanged")) call.args[0] = new ArrayList<>();
-                    else if (call.args[0] instanceof CellLocation) call.args[0] = CellLocation.getEmpty();
-                    else if (call.args[0] != null) call.args[0] = XposedHelpers.newInstance(call.args[0].getClass());
+                    if (name.equals("onCellInfoChanged")) call.args[0] = injected(call.args[0]);
+                    else if (call.args[0] instanceof CellLocation) {
+                        Profile profile = config.get();
+                        CellLocation fake = profile.hasCellEnvironment() ? CellFactory.legacyLocation(profile) : null;
+                        call.args[0] = fake != null ? fake : CellLocation.getEmpty();
+                    } else if (call.args[0] != null) call.args[0] = XposedHelpers.newInstance(call.args[0].getClass());
                 }
             });
         }
@@ -103,8 +113,14 @@ final class CellHooks {
     private void sentinel(Class<?> type, String name, Object value) {
         Hooks.all(type, name, new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam call) {
-                if (active() && !original.get() && !call.hasThrowable()) call.setResult(value);
+                if (active() && !original.get() && !call.hasThrowable() && !config.get().hasCellEnvironment())
+                    call.setResult(value);
             }
         });
+    }
+    @SuppressWarnings("unchecked")
+    private List<CellInfo> injected(Object real) {
+        Profile profile = config.get();
+        return CellFactory.build(real instanceof List ? (List<CellInfo>) real : null, profile);
     }
 }

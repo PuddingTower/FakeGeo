@@ -27,10 +27,6 @@ public final class DiagnosticsReceiver extends BroadcastReceiver {
                 && !"io.github.fakegeo.DEBUG_LOCATION_CACHE_SCHEMA".equals(action)
                 && !"io.github.fakegeo.DEBUG_LOCATION_CACHE_BACKUP".equals(action)
                 && !"io.github.fakegeo.DEBUG_LOCATION_CACHE_RESTORE".equals(action)
-                && !"io.github.fakegeo.DEBUG_ENABLE_CAMPUS_CACHE_TEST".equals(action)
-                && !"io.github.fakegeo.DEBUG_CAMPUS_CACHE_TEST_RESTORE".equals(action)
-                && !"io.github.fakegeo.DEBUG_MOTION_PUBLISH_TEST".equals(action)
-                && !"io.github.fakegeo.DEBUG_STOP_MOTION".equals(action)
                 && !"io.github.fakegeo.DEBUG_SYSTEM_STATUS".equals(action)) return;
         PendingResult pending = goAsync();
         new Thread(() -> {
@@ -39,16 +35,6 @@ public final class DiagnosticsReceiver extends BroadcastReceiver {
                 try {
                     if("io.github.fakegeo.DEBUG_SYSTEM_STATUS".equals(action)) {
                         result=RootBridge.execute(RootCommands.status());
-                    } else if("io.github.fakegeo.DEBUG_STOP_MOTION".equals(action)) {
-                        context.stopService(new Intent(context,io.github.fakegeo.motion.JoystickService.class));
-                        synchronized(ConfigStore.class) {
-                            Profile p=ConfigStore.published(context);
-                            result=io.github.fakegeo.root.RootProfilePublisher.publishUser(context,new Profile(p.json().put("enabled",false)));
-                        }
-                    } else if("io.github.fakegeo.DEBUG_MOTION_PUBLISH_TEST".equals(action)) {
-                        result=MotionRootRegression.run(context);
-                    } else if ("io.github.fakegeo.DEBUG_ENABLE_CAMPUS_CACHE_TEST".equals(action) || "io.github.fakegeo.DEBUG_CAMPUS_CACHE_TEST_RESTORE".equals(action)) {
-                        result = CampusCacheSetup.run(context, "io.github.fakegeo.DEBUG_CAMPUS_CACHE_TEST_RESTORE".equals(action));
                     } else if ("io.github.fakegeo.DEBUG_LOCATION_CACHE_BACKUP".equals(action) || "io.github.fakegeo.DEBUG_LOCATION_CACHE_RESTORE".equals(action)) {
                         result = LocationCacheIsolation.run(context, "io.github.fakegeo.DEBUG_LOCATION_CACHE_RESTORE".equals(action));
                     } else if ("io.github.fakegeo.DEBUG_LOCATION_CACHE_SCHEMA".equals(action)) {

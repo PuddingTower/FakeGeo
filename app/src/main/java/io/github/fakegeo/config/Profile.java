@@ -4,7 +4,12 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
+import io.github.fakegeo.environment.BleFingerprint;
+import io.github.fakegeo.environment.CellFingerprint;
+import io.github.fakegeo.environment.EnvironmentSnapshot;
+import io.github.fakegeo.environment.WifiFingerprint;
 
 /** An immutable snapshot; never expose mutable preferences to a hook. */
 public final class Profile {
@@ -18,40 +23,23 @@ public final class Profile {
     public final boolean gnss;
     public final String locationCacheTarget;
     public final boolean jitter;
-    public final double jitterMeters, motionSpeed, motionInitialSpeed, motionBearing;
-    public final long motionElapsed, motionWall, motionLease;
-    public final int motionMode;
-    public final long motionSeed;
-    public final boolean sensors;
-    public final Set<String> sensorTargets;
+    public final double jitterMeters;
     public final boolean antiDetect, wifiConnected, keepAlive;
     public final String beaconMac, beaconName, beaconRecord, beaconUuid;
     public final int beaconMajor, beaconMinor;
+    public final EnvironmentSnapshot environment;
+    public final List<WifiFingerprint> wifiPoints;
+    public final WifiFingerprint primaryWifi;
+    public final List<BleFingerprint> blePoints;
+    public final List<CellFingerprint> cellPoints;
 
     public Profile(JSONObject json) {
         enabled = json.optBoolean("enabled", false);
         systemMode = json.optBoolean("systemMode", true);
         gnss = json.optBoolean("gnss", false);
         jitter = json.optBoolean("jitter", true);
-        sensors = json.optBoolean("sensors", false);
-        sensorTargets = Collections.unmodifiableSet(Validation.packages(json.optString("sensorTargets", "")));
-        double mode = Validation.number(json.optString("motionMode", "0"), 0, 2, "移动模式");
-        if (mode != Math.floor(mode)) throw new IllegalArgumentException("移动模式必须是整数");
-        motionMode = (int) mode;
-        motionSeed = json.optLong("motionSeed", 1);
-        if (motionSeed < 0) throw new IllegalArgumentException("运动种子无效");
         jitterMeters = Validation.number(json.optString("jitterMeters", "2"), 0, 30, "定位漂移半径（米）");
-        motionSpeed = Validation.number(json.optString("motionSpeed", "0"), 0, 20, "移动速度（米／秒）");
-        motionInitialSpeed = Validation.number(json.optString("motionInitialSpeed", "0"), 0, 20, "初始移动速度");
-        motionBearing = Validation.number(json.optString("motionBearing", "0"), 0, 360, "移动方向");
-        motionElapsed = json.optLong("motionElapsed", 0);
-        motionWall = json.optLong("motionWall", 0);
-        motionLease = json.optLong("motionLease", 0);
-        if (motionElapsed < 0 || motionWall < 0 || motionLease < 0 || motionLease > 6000)
-            throw new IllegalArgumentException("移动指令时限无效");
-        boolean legacyCache = json.optBoolean("campusCacheRefresh", false);
-        locationCacheTarget = Validation.cachePackage(json.optString("locationCacheTarget",
-                legacyCache ? "com.wisedu.cpdaily" : "").trim());
+        locationCacheTarget = Validation.cachePackage(json.optString("locationCacheTarget", "").trim());
         revision = json.optLong("revision", 0);
         location = json.optBoolean("location", true);
         wifi = json.optBoolean("wifi", true);
@@ -66,13 +54,13 @@ public final class Profile {
         double ms = Validation.number(json.optString("interval", "1000"), 500, 3600000, "更新间隔（毫秒）");
         if (ms != Math.floor(ms)) throw new IllegalArgumentException("更新间隔必须是整数");
         interval = (long) ms;
-        ssid = json.optString("ssid", "FakeGeo-Lab");
+        ssid = json.optString("ssid", "EnvSim-Lab");
         if (ssid.isEmpty() || ssid.getBytes(StandardCharsets.UTF_8).length > 32)
             throw new IllegalArgumentException("SSID 需要 1–32 字节");
         bssid = Validation.mac(json.optString("bssid", "02:00:00:00:00:10"));
         wifiMac = Validation.mac(json.optString("wifiMac", "02:00:00:00:00:11"));
         bluetoothMac = Validation.mac(json.optString("bluetoothMac", "02:00:00:00:00:12"));
-        bluetoothName = json.optString("bluetoothName", "FakeGeo");
+        bluetoothName = json.optString("bluetoothName", "EnvSim");
         if (bluetoothName.length() > 64) throw new IllegalArgumentException("蓝牙名称最长 64 字符");
         antiDetect = json.optBoolean("antiDetect", true);
         keepAlive = json.optBoolean("keepAlive", true);
@@ -89,6 +77,17 @@ public final class Profile {
         beaconMajor = (int) major; beaconMinor = (int) minor;
         if (!beaconMac.isEmpty() && beaconRecord.isEmpty() && beaconUuid.isEmpty())
             throw new IllegalArgumentException("填写了考勤机 MAC 后，请提供广播十六进制或 iBeacon UUID");
+        JSONObject environmentJson = json.optJSONObject("environment");
+        if (environmentJson != null && environmentJson.toString().length() > 60000)
+            throw new IllegalArgumentException("环境指纹过大，请减少锚点数量");
+        environment = environmentJson == null ? null : EnvironmentSnapshot.parse(environmentJson);
+        List<WifiFingerprint> capturedWifi = environment != null && !environment.wifi.isEmpty()
+                ? environment.wifi
+                : Collections.singletonList(new WifiFingerprint(ssid, bssid, -45, 2412, "[WPA2-PSK-CCMP][ESS]", wifiConnected));
+        wifiPoints = Collections.unmodifiableList(new java.util.ArrayList<>(capturedWifi));
+        primaryWifi = wifiPoints.get(0);
+        blePoints = environment == null ? Collections.emptyList() : environment.ble;
+        cellPoints = environment == null ? Collections.emptyList() : environment.cells;
         targets = Collections.unmodifiableSet(Validation.packages(json.optString("targets", "")));
         if (enabled && !systemMode && targets.isEmpty()) throw new IllegalArgumentException("应用模式启用前请添加目标应用包名");
     }
@@ -96,6 +95,9 @@ public final class Profile {
     public static Profile parse(String text) throws JSONException { return new Profile(new JSONObject(text)); }
     /** An empty MAC keeps the previous behaviour: BLE scans stay suppressed instead of injected. */
     public boolean beaconEnabled() { return bluetooth && !beaconMac.isEmpty(); }
+    public boolean hasWifiEnvironment() { return environment != null && !environment.wifi.isEmpty(); }
+    public boolean hasBleEnvironment() { return !blePoints.isEmpty(); }
+    public boolean hasCellEnvironment() { return !cellPoints.isEmpty(); }
     public JSONObject json() {
         JSONObject j = new JSONObject();
         try {
@@ -103,11 +105,6 @@ public final class Profile {
             j.put("systemMode", systemMode); j.put("revision", revision);
             j.put("gnss", gnss);
             j.put("jitter", jitter); j.put("jitterMeters", jitterMeters);
-            j.put("motionSpeed", motionSpeed); j.put("motionInitialSpeed", motionInitialSpeed);
-            j.put("motionBearing", motionBearing); j.put("motionElapsed", motionElapsed);
-            j.put("motionWall", motionWall); j.put("motionLease", motionLease);
-            j.put("motionMode", motionMode); j.put("motionSeed", motionSeed);
-            j.put("sensors", sensors); j.put("sensorTargets", String.join("\n", sensorTargets));
             j.put("locationCacheTarget", locationCacheTarget);
             j.put("bluetooth", bluetooth); j.put("cell", cell);
             j.put("latitude", latitude); j.put("longitude", longitude); j.put("altitude", altitude);
@@ -117,6 +114,7 @@ public final class Profile {
             j.put("antiDetect", antiDetect); j.put("keepAlive", keepAlive); j.put("wifiConnected", wifiConnected);
             j.put("beaconMac", beaconMac); j.put("beaconName", beaconName); j.put("beaconRecord", beaconRecord);
             j.put("beaconUuid", beaconUuid); j.put("beaconMajor", beaconMajor); j.put("beaconMinor", beaconMinor);
+            if (environment != null) j.put("environment", environment.json());
             j.put("targets", String.join("\n", targets));
         } catch (JSONException e) { throw new IllegalStateException(e); }
         return j;

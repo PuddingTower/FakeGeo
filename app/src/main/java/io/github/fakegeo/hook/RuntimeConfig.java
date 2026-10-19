@@ -7,7 +7,6 @@ import android.database.Cursor;
 import android.os.SystemClock;
 import io.github.fakegeo.config.ConfigStore;
 import io.github.fakegeo.config.Profile;
-import io.github.fakegeo.hook.system.ConfigBinderBridge;
 import io.github.fakegeo.hook.system.ConfigBridgeClient;
 import de.robv.android.xposed.XposedBridge;
 
@@ -16,11 +15,10 @@ public final class RuntimeConfig {
     private volatile Profile profile = Profile.defaults();
     private volatile long nextRead;
     private boolean reportedFailure;
-    private final boolean sensorOnly;
     private volatile String channel = "未读取";
     private boolean loggedChannel;
-    public RuntimeConfig(Context context) { this(context, false); }
-    public RuntimeConfig(Context context, boolean sensorOnly) { this.context = context; this.sensorOnly = sensorOnly; }
+    private String lastJson;
+    public RuntimeConfig(Context context) { this.context = context; }
     public Profile get() {
         if (SystemClock.elapsedRealtime() >= nextRead) refresh();
         return profile;
@@ -28,12 +26,12 @@ public final class RuntimeConfig {
     private synchronized void refresh() {
         long now = SystemClock.elapsedRealtime();
         if (now < nextRead) return;
-        nextRead = now + (sensorOnly ? 500 : 1500);
+        nextRead = now + 1500;
         if (readBridge()) return;
         readProvider();
     }
     private boolean readBridge() {
-        String json = ConfigBridgeClient.read(context, sensorOnly ? ConfigBinderBridge.KIND_SENSORS : ConfigBinderBridge.KIND_PROFILE);
+        String json = ConfigBridgeClient.read(context);
         if (json == null) return false;
         try {
             channel = "binder";
@@ -42,7 +40,7 @@ public final class RuntimeConfig {
         } catch (Exception invalid) { return false; }
     }
     private void readProvider() {
-        try (Cursor cursor = context.getContentResolver().query(sensorOnly ? ConfigStore.SENSOR_URI : ConfigStore.URI, null, null, null, null)) {
+        try (Cursor cursor = context.getContentResolver().query(ConfigStore.URI, null, null, null, null)) {
             if (cursor == null || !cursor.moveToFirst()) throw new IllegalStateException("Configuration unavailable");
             channel = "provider";
             apply(cursor.getString(0));
@@ -51,19 +49,20 @@ public final class RuntimeConfig {
             // URI authorization was revoked (e.g. the target was removed). Do not retain enabled state.
             profile = Profile.defaults();
         } catch (Exception e) {
-            if (sensorOnly) profile = Profile.defaults();
             // Retain the last valid snapshot during a transient IPC failure. Never write preferences here.
             if (!reportedFailure) XposedBridge.log("FakeGeo: config IPC failed in " + context.getPackageName() + ": " + e);
             reportedFailure = true;
         }
     }
     private void apply(String json) throws Exception {
+        reportedFailure = false;
+        // A 20 KB environment fingerprint is pointless to re-parse every 1.5 s when nothing changed.
+        if (json.equals(lastJson)) return;
         Profile next = Profile.parse(json);
         // Shared UIDs can read the profile, but only explicitly listed packages activate hooks.
-        boolean listed = sensorOnly ? next.sensorTargets.contains(context.getPackageName())
-                : !next.systemMode && next.targets.contains(context.getPackageName());
+        boolean listed = !next.systemMode && next.targets.contains(context.getPackageName());
         profile = listed ? next : Profile.defaults();
-        reportedFailure = false;
+        lastJson = json;
         if (!loggedChannel) {
             loggedChannel = true;
             XposedBridge.log("FakeGeo: first configuration read in " + context.getPackageName() + " via " + channel);

@@ -50,10 +50,13 @@ public final class AdvancedSettingsActivity extends Activity {
         UiKit.insetPage(page);
         section("地图服务");
         button("高德地图与搜索设置", () -> startActivity(new Intent(this, MapSettingsActivity.class)));
+        section("环境指纹");
+        button("环境采集与指纹库", () -> startActivity(new Intent(this, EnvironmentActivity.class)));
+        text("在目标场所采集一次 Wi-Fi、蓝牙和小区，清洗后自动填入锚点；不再需要手写 MAC。采集只在前台进行约 22 秒，不做后台扫描。", 13, UiKit.MUTED);
         section("系统与授权");
         text(MainActivity.moduleActive() ? "LSPosed 已注入模块界面" : "请在 LSPosed 启用模块；界面未被注入不代表目标 App 未生效。", 14, UiKit.MUTED);
-        text("Android 10–16 · 系统服务 Hook\n在 LSPosed 中选择 Android 系统／系统框架、电话服务、蓝牙与 Wi-Fi 服务；一加／ColorOS 还需勾选 Oplus 定位与高通定位服务（列表里没有就是本机没有该组件）。首次启用或改动作用域后重启手机。\n蓝牙信标注入、高德结果清洗与调用栈隐藏只在应用兼容模式下生效：需要把目标应用同时加入作用域，并关闭系统模式。", 14, Color.DKGRAY);
-        rootStatus = new TextView(this); rootStatus.setText("Root 与系统 Hook 状态：尚未检测"); content.addView(rootStatus);
+        text("Android 10–16 · 系统服务 Hook\n在 LSPosed 中选择 Android 系统／系统框架、电话服务、蓝牙与 Wi-Fi 服务；一加／ColorOS 还需勾选 Oplus 定位与高通定位服务（列表里没有就是本机没有该组件）。首次启用或改动作用域后重启手机。\n蓝牙信标注入、高德结果清洗与调用栈隐藏只在应用兼容模式下生效：需要把目标应用同时加入作用域，并关闭系统模式。", 14, UiKit.MUTED);
+        rootStatus = new TextView(this); rootStatus.setText("Root 与系统 Hook 状态：尚未检测"); rootStatus.setTextColor(UiKit.INK); rootStatus.setPadding(0, dp(8), 0, dp(8)); content.addView(rootStatus);
         button("请求 KernelSU / Root 授权", () -> rootTask("请求 Root 授权…", () -> { RootBridge.authorize(); return "已取得 Root UID 0。请继续在 LSPosed 启用系统作用域。"; }));
         button("查看 LSPosed 系统作用域", this::scopeInstructions);
         button("检测系统 Hook 状态", () -> rootTask("读取系统状态…", this::checkStatus));
@@ -61,9 +64,9 @@ public final class AdvancedSettingsActivity extends Activity {
         flag("enabled", "启用虚拟环境", p.enabled);
         flag("systemMode", "系统模式（统一修改系统分发的数据）", p.systemMode);
         flag("location", "替换定位（含持续回调）", p.location);
-        flag("wifi", "替换 Wi-Fi 信息与扫描结果", p.wifi);
-        flag("bluetooth", "虚拟蓝牙身份，屏蔽附近设备扫描", p.bluetooth);
-        flag("cell", "隐藏基站定位身份", p.cell);
+        flag("wifi", "回放 Wi-Fi 扫描与连接信息", p.wifi);
+        flag("bluetooth", "回放采集的蓝牙设备（应用兼容模式）", p.bluetooth);
+        flag("cell", "回放采集的基站身份（未采集时隐藏）", p.cell);
         flag("gnss", "系统 GNSS 状态适配（合成状态与 GPS 附加信息）", p.gnss);
         section("定位缓存");
         cacheSelection = UiKit.text(this,"",14,UiKit.INK,false); content.addView(cacheSelection);
@@ -72,7 +75,7 @@ public final class AdvancedSettingsActivity extends Activity {
         clearCacheButton = UiKit.button(this, "清除所选应用的定位缓存", false);
         LinearLayout.LayoutParams clearLayout = new LinearLayout.LayoutParams(-1, dp(50)); clearLayout.topMargin=dp(8); content.addView(clearCacheButton, clearLayout);
         clearCacheButton.setOnClickListener(v -> clearSelectedCache());
-        text("选择应用后，点击按钮才执行清理。操作会关闭所选应用，先备份再移走支持的定位缓存，随后请重新打开应用。保存配置或启用定位不会自动清缓存。", 13, Color.DKGRAY);
+        text("选择应用后，点击按钮才执行清理。操作会关闭所选应用，先备份再移走支持的定位缓存，随后请重新打开应用。保存配置或启用定位不会自动清缓存。", 13, UiKit.MUTED);
         text("支持已确认的高德定位库和百度 SDK 内部离线定位库；未找到会明确提示。仅限主用户的非系统应用。", 13, UiKit.MUTED);
         button("恢复最近一次备份的定位缓存", () -> rootTask("正在恢复定位缓存…", () -> {
             String result = io.github.fakegeo.root.LocationCacheManager.restoreLatest(this);
@@ -88,16 +91,16 @@ public final class AdvancedSettingsActivity extends Activity {
                     : result.contains("NOT_FOUND") ? "没有发现可清理的第三方定位缓存。" : "第三方定位缓存已恢复，请重新打开该应用。";
         }));
         section("位置参数 · WGS84");
-        button("悬浮摇杆 · 走路／跑步／骑车", () -> startActivity(new Intent(this, MovementSettingsActivity.class)));
         flag("jitter", "模拟小幅卫星定位漂移", p.jitter);
         field("jitterMeters", "定位漂移半径（米，0–30）", String.valueOf(p.jitterMeters), true);
-        text("默认在选点附近 2 米内平滑漂移，精度与海拔小幅变化。漂移是虚拟坐标变化，不改变真实卫星信号。移动时各系统定位回调共享速度与方向。",13,UiKit.MUTED);
+        text("默认在选点附近 2 米内平滑漂移，精度与海拔小幅变化。漂移是虚拟坐标变化，不改变真实卫星信号。",13,UiKit.MUTED);
         field("latitude", "纬度（-90 到 90）", String.valueOf(p.latitude), true);
         field("longitude", "经度（-180 到 180）", String.valueOf(p.longitude), true);
         field("altitude", "海拔（米）", String.valueOf(p.altitude), true);
         field("accuracy", "精度（米）", String.valueOf(p.accuracy), true);
         field("interval", "更新间隔（毫秒，至少 500）", String.valueOf(p.interval), true);
         section("无线信息");
+        text("已应用环境指纹时，Wi-Fi 与蓝牙列表来自环境库；下面的单值只在未应用环境时作为回退。", 13, UiKit.MUTED);
         field("ssid", "虚拟 Wi-Fi SSID", p.ssid, false);
         field("bssid", "虚拟 Wi-Fi BSSID", p.bssid, false);
         field("wifiMac", "虚拟 Wi-Fi MAC", p.wifiMac, false);
@@ -107,7 +110,7 @@ public final class AdvancedSettingsActivity extends Activity {
         flag("antiDetect", "隐藏模拟定位开关、AppOps 与模块调用栈", p.antiDetect);
         flag("keepAlive", "ColorOS 冻结豁免（仅豁免本模块进程）", p.keepAlive);
         section("蓝牙考勤信标");
-        text("填写考勤机 MAC 后二选一：粘贴抓包得到的完整广播十六进制，或填写 iBeacon UUID 与 Major／Minor。留空时维持原来的“屏蔽蓝牙扫描”。", 13, UiKit.MUTED);
+        text("没有环境指纹时，可在这里手工填写考勤机 MAC 与广播；应用环境后，多设备蓝牙回放会优先使用环境库。蓝牙回放只在应用兼容模式生效。", 13, UiKit.MUTED);
         field("beaconMac", "考勤机 MAC（留空表示不注入）", p.beaconMac, false);
         field("beaconRecord", "广播数据十六进制（推荐，最长 31 字节）", p.beaconRecord, false);
         field("beaconUuid", "iBeacon UUID（32 位十六进制）", p.beaconUuid, false);
@@ -128,13 +131,13 @@ public final class AdvancedSettingsActivity extends Activity {
         compatibilityViews.add(content.getChildAt(content.getChildCount() - 1));
         button("保存并应用配置", this::save);
         button("停止虚拟环境", this::stop);
-        text("系统模式通过系统服务修改分发的数据，请保持手机系统定位开关开启。蓝牙扫描与基站地理身份隔离会影响附近设备功能。地图坐标为 WGS84；Wi-Fi／蓝牙／基站 Hook 不改变物理基带、网卡和公网 IP。", 13, Color.DKGRAY);
+        text("系统模式通过系统服务修改分发的数据，请保持手机系统定位开关开启。应用环境后会按采集结果回放 Wi-Fi、蓝牙与基站；未采集到小区时仍隐藏真实基站身份。地图坐标为 WGS84，不改变物理基带、网卡和公网 IP。", 13, UiKit.MUTED);
         section("软件更新");
         updateStatus = UiKit.text(this, "当前版本 " + io.github.fakegeo.config.ModuleVersion.CURRENT, 14, UiKit.MUTED, false); content.addView(updateStatus);
         updateButton = UiKit.button(this, "检查更新", false); LinearLayout.LayoutParams updateLayout = new LinearLayout.LayoutParams(-1, dp(50)); updateLayout.topMargin=dp(8); content.addView(updateButton, updateLayout);
         updateButton.setOnClickListener(v -> checkUpdate());
         section("关于");
-        text("FakeGeo · 免费开源\n作者：" + AppInfo.AUTHOR + "\n版本：" + io.github.fakegeo.config.ModuleVersion.CURRENT, 14, UiKit.INK);
+        text("拟境 · 免费开源\n作者：" + AppInfo.AUTHOR + "\n版本：" + io.github.fakegeo.config.ModuleVersion.CURRENT, 14, UiKit.INK);
         TextView source = UiKit.text(this, AppInfo.REPOSITORY, 14, UiKit.ACCENT, false); source.setTextIsSelectable(true); source.setPadding(0,dp(12),0,dp(12)); source.setOnClickListener(v -> openLink(AppInfo.REPOSITORY)); content.addView(source);
         button("查看源代码", () -> openLink(AppInfo.REPOSITORY));
         button("使用说明与免责声明", () -> NoticeDialog.show(this, false, () -> {}));
@@ -172,7 +175,6 @@ public final class AdvancedSettingsActivity extends Activity {
         // Always publish the disabled/non-system state too, so a previous system profile is retired.
         rootTask("正在应用配置…", () -> {
             io.github.fakegeo.root.RootProfilePublisher.publishUser(this, profile);
-            stopService(new Intent(this, io.github.fakegeo.motion.JoystickService.class));
             return "系统配置已发布，等待 Hook 读取。点击检测系统 Hook 状态确认；首次设置作用域后需要重启手机。";
         });
     }
@@ -192,7 +194,7 @@ public final class AdvancedSettingsActivity extends Activity {
     private void scopeInstructions() {
         Intent manager = getPackageManager().getLaunchIntentForPackage("org.lsposed.manager");
         new AlertDialog.Builder(this).setTitle("LSPosed 系统作用域")
-                .setMessage("启用 FakeGeo 后勾选：\n• Android 系统／系统框架（android）\n• 电话服务（com.android.phone）\n• 蓝牙（com.android.bluetooth）\n• Wi-Fi 服务（若列表存在）\n• ColorOS：com.oplus.location、com.oplus.locationproxy、com.oplus.nhs、com.oplus.athena（若列表存在）\n• 高通：com.qualcomm.location（若列表存在）\n\n首次启用或改变系统作用域后重启手机。KernelSU Root 授权不能代替 LSPosed 作用域授权。")
+                .setMessage("启用拟境 后勾选：\n• Android 系统／系统框架（android）\n• 电话服务（com.android.phone）\n• 蓝牙（com.android.bluetooth）\n• Wi-Fi 服务（若列表存在）\n• ColorOS：com.oplus.location、com.oplus.locationproxy、com.oplus.nhs、com.oplus.athena（若列表存在）\n• 高通：com.qualcomm.location（若列表存在）\n\n首次启用或改变系统作用域后重启手机。KernelSU Root 授权不能代替 LSPosed 作用域授权。")
                 .setPositiveButton(manager == null ? "知道了" : "打开 LSPosed", (dialog, which) -> { if (manager != null) startActivity(manager); }).show();
     }
     private interface RootAction { String run() throws Exception; }
@@ -209,7 +211,7 @@ public final class AdvancedSettingsActivity extends Activity {
         if (output.equals("SYSTEM_STATUS_MISSING_NO_PROFILE"))
             return "状态目录已准备，但配置尚未发布成功。请先保存并应用；不能据此判断系统 Hook 没有加载。" + describeServices();
         if (output.equals("SYSTEM_STATUS_MISSING_WITH_PROFILE"))
-            return "配置文件存在，但系统状态仍未上报。请检查 LSPosed 中 FakeGeo 的 system_server 加载日志。" + describeServices();
+            return "配置文件存在，但系统状态仍未上报。请检查 LSPosed 中拟境的 system_server 加载日志。" + describeServices();
         if (!output.startsWith("{")) return "系统状态输出异常：" + output + describeServices();
         JSONObject status = new JSONObject(output);
         long age = System.currentTimeMillis() - status.optLong("reportedAt");
@@ -221,6 +223,9 @@ public final class AdvancedSettingsActivity extends Activity {
                 + "\nProvider：" + status.optJSONArray("providers") + "\n累计合成报告：" + status.optLong("reportCount")
                 + "\nGNSS 状态服务：" + (status.optBoolean("gnssCaptured") ? "已捕获" : "未捕获")
                 + " · 状态报告：" + status.optLong("gnssReportCount")
+                + "\n环境锚点：Wi-Fi " + status.optLong("wifiAnchors")
+                + " · 蓝牙 " + status.optLong("bleAnchors") + " · 小区 " + status.optLong("cellAnchors")
+                + (status.optString("environment").isEmpty() ? "" : " · " + status.optString("environment"))
                 + "\n缓存／回调替换：" + status.optLong("cacheReadReplacements") + "／" + status.optLong("deliveryReplacements")
                 + " · 拦截：" + status.optLong("deliveryDrops")
                 + "\nWi-Fi 网络能力保护：" + (status.optBoolean("wifiConnectivityProtected") ? "已加载" : "未加载")
@@ -368,7 +373,7 @@ public final class AdvancedSettingsActivity extends Activity {
         edit.setInputType(numeric ? InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED
                 : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         edit.setTextSize(15); edit.setTextColor(UiKit.INK); edit.setPadding(dp(14),dp(12),dp(14),dp(12));
-        edit.setBackground(UiKit.rounded(Color.WHITE,12));
+        edit.setBackground(UiKit.surface(this,12));
         LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2); layout.bottomMargin=dp(6);
         content.addView(edit,layout); fields.put(key, edit);
     }
