@@ -25,6 +25,8 @@ public final class ConfigStore {
         if (!prefs(context).edit().putString("published_system_json", profile.json().toString()).commit())
             throw new IllegalStateException("系统文件已发布，但电话／无线配置同步失败，请重试保存。");
         context.getContentResolver().notifyChange(URI, null);
+        try { io.github.fakegeo.widget.LocationWidgetProvider.refreshAll(context); }
+        catch (RuntimeException unavailable) { /* Direct boot and teardown may lack a widget host. */ }
     }
     public static void restoreGrants(Context context) {
         grantServices(context);
@@ -59,8 +61,10 @@ public final class ConfigStore {
         Profile previous = load(context);
         grantServices(context);
         // URI grants make the provider visible on Android 11+ without modifying target manifests.
-        for (String target : profile.targets)
-            context.grantUriPermission(target, URI, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        for (String target : profile.targets) {
+            try { context.grantUriPermission(target, URI, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+            catch (RuntimeException absent) { /* An uninstalled target must not block other settings. */ }
+        }
         if (!prefs(context).edit().putString("json", profile.json().toString()).commit())
             throw new IllegalStateException("配置写入失败");
         for (String target : previous.targets) if (!profile.targets.contains(target))

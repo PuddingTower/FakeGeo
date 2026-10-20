@@ -124,8 +124,11 @@ public final class EnvironmentCapture {
         startBle();
         handler.postDelayed(this::collectCells, 1500);
         handler.postDelayed(this::collectCells, 12000);
-        handler.postDelayed(this::finish, TOTAL_MS);
+        handler.postDelayed(this::finishNow, TOTAL_MS);
     }
+
+    /** Ends the capture early; the listener still receives the filtered snapshot. */
+    public void finishNow() { finish(); }
 
     public void cancel() {
         if (finished) return;
@@ -345,7 +348,7 @@ public final class EnvironmentCapture {
     }
 
     private void considerLocation(Location value) {
-        if (value == null) return;
+        if (value == null || isMock(value)) return;
         long age = System.currentTimeMillis() - value.getTime();
         if (age > 15 * 60 * 1000L) return;
         if (bestLocation == null) { bestLocation = value; return; }
@@ -353,6 +356,12 @@ public final class EnvironmentCapture {
         boolean muchBetter = value.getAccuracy() + 25 < bestLocation.getAccuracy();
         if (muchBetter || (fresher && value.getAccuracy() <= bestLocation.getAccuracy() + 50))
             bestLocation = value;
+    }
+
+    /** Another mock provider must not become the "real" anchor of a captured environment. */
+    @SuppressWarnings("deprecation")
+    private static boolean isMock(Location value) {
+        return Build.VERSION.SDK_INT >= 31 ? value.isMock() : value.isFromMockProvider();
     }
 
     private void subscribeLocation() {

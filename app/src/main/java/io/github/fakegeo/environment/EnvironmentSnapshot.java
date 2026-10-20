@@ -29,9 +29,9 @@ public final class EnvironmentSnapshot {
                                List<WifiFingerprint> wifi, List<BleFingerprint> ble, List<CellFingerprint> cells) {
         this.capturedAt = capturedAt <= 0 ? System.currentTimeMillis() : capturedAt;
         this.id = validId(id) ? id : Long.toString(this.capturedAt);
-        String label = name == null ? "" : name.trim();
+        String label = clean(name);
         if (label.isEmpty()) label = "环境 " + new SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(new Date(this.capturedAt));
-        if (label.length() > 64) label = label.substring(0, 64);
+        if (label.length() > 64) label = label.substring(0, 64).trim();
         this.name = label;
         boolean usable = hasLocation && Double.isFinite(latitude) && Double.isFinite(longitude)
                 && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 && !(latitude == 0 && longitude == 0);
@@ -140,6 +140,16 @@ public final class EnvironmentSnapshot {
         result.sort(Comparator.comparing((CellFingerprint point) -> !point.registered)
                 .thenComparingInt(point -> -point.signal));
         return result.size() > MAX_CELLS ? new ArrayList<>(result.subList(0, MAX_CELLS)) : result;
+    }
+
+    private static String clean(String value) {
+        if (value == null) return "";
+        StringBuilder result = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            result.append(Character.isISOControl(character) ? ' ' : character);
+        }
+        return result.toString().trim();
     }
 
     private static boolean validId(String value) {

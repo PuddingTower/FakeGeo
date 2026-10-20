@@ -9,12 +9,12 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 public final class GitHubUpdateClient {
-    public static final String ENDPOINT = "https://api.github.com/repos/myxuebi/FakeGeo/releases/latest";
+    public static final String ENDPOINT = "https://api.github.com/repos/" + io.github.fakegeo.ui.AppInfo.REPOSITORY_SLUG + "/releases/latest";
     public static GitHubRelease latest() throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(ENDPOINT).openConnection();
         connection.setConnectTimeout(12000); connection.setReadTimeout(12000); connection.setInstanceFollowRedirects(false);
         connection.setRequestProperty("Accept", "application/vnd.github+json");
-        connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10");
+        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
         connection.setRequestProperty("User-Agent", "FakeGeo-UpdateChecker");
         try { return read(connection); }
         catch (java.net.UnknownHostException | java.net.ConnectException | javax.net.ssl.SSLException failure) {

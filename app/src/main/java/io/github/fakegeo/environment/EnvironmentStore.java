@@ -3,7 +3,6 @@ package io.github.fakegeo.environment;
 import android.content.Context;
 import android.content.SharedPreferences;
 import org.json.JSONArray;
-import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -12,8 +11,7 @@ import java.util.List;
 public final class EnvironmentStore {
     private static final String FILE = "environment_library";
     private static final String ITEMS = "items";
-    private static final int MAX_ENVIRONMENTS = 16;
-    private static final int MAX_IMPORT_CHARS = 512 * 1024;
+    public static final int MAX_ENVIRONMENTS = 16;
 
     private EnvironmentStore() {}
 
@@ -72,30 +70,35 @@ public final class EnvironmentStore {
         return array.toString();
     }
 
-    public static int importText(Context context, String text) throws Exception {
-        String value = text == null ? "" : text.trim();
-        if (value.isEmpty()) throw new IllegalArgumentException("剪贴板为空");
-        if (value.length() > MAX_IMPORT_CHARS) throw new IllegalArgumentException("导入内容过大");
-        List<EnvironmentSnapshot> parsed = new ArrayList<>();
-        if (value.startsWith("[")) {
-            JSONArray array = new JSONArray(value);
-            for (int i = 0; i < array.length(); i++) {
-                EnvironmentSnapshot snapshot = EnvironmentSnapshot.parse(unwrap(array.optJSONObject(i)));
-                if (snapshot != null) parsed.add(snapshot);
-            }
-        } else {
-            EnvironmentSnapshot snapshot = EnvironmentSnapshot.parse(unwrap(new JSONObject(value)));
-            if (snapshot != null) parsed.add(snapshot);
+    public static final class ImportResult {
+        public final int added, replaced, rejected, evicted;
+        ImportResult(int added, int replaced, int rejected, int evicted) {
+            this.added = added; this.replaced = replaced; this.rejected = rejected; this.evicted = evicted;
         }
-        for (EnvironmentSnapshot snapshot : parsed) save(context, snapshot);
-        return parsed.size();
+        public boolean changedAnything() { return added > 0 || replaced > 0; }
     }
 
-    /** Also accept a full profile export; its environment object is the useful part. */
-    private static JSONObject unwrap(JSONObject json) {
-        if (json == null) return null;
-        JSONObject nested = json.optJSONObject("environment");
-        return nested != null ? nested : json;
+    public static ImportResult importText(Context context, String text) throws Exception {
+        EnvironmentImport.Result parsed = EnvironmentImport.parse(text);
+        synchronized (EnvironmentStore.class) {
+            List<EnvironmentSnapshot> items = all(context);
+            int added = 0, replaced = 0;
+            for (EnvironmentSnapshot snapshot : parsed.snapshots) {
+                int existing = indexOf(items, snapshot.id);
+                if (existing >= 0) { items.set(existing, snapshot); replaced++; }
+                else { items.add(snapshot); added++; }
+            }
+            items.sort(Comparator.comparingLong((EnvironmentSnapshot item) -> item.capturedAt).reversed());
+            int evicted = Math.max(0, items.size() - MAX_ENVIRONMENTS);
+            while (items.size() > MAX_ENVIRONMENTS) items.remove(items.size() - 1);
+            write(context, items);
+            return new ImportResult(added, replaced, parsed.rejected, evicted);
+        }
+    }
+
+    private static int indexOf(List<EnvironmentSnapshot> items, String id) {
+        for (int i = 0; i < items.size(); i++) if (items.get(i).id.equals(id)) return i;
+        return -1;
     }
 
     private static void write(Context context, List<EnvironmentSnapshot> items) {

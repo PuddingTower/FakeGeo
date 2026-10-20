@@ -5,7 +5,9 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -13,6 +15,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -22,6 +29,7 @@ import java.util.concurrent.Executors;
 import io.github.fakegeo.config.ConfigStore;
 import io.github.fakegeo.config.Profile;
 import io.github.fakegeo.environment.EnvironmentCapture;
+import io.github.fakegeo.environment.EnvironmentImport;
 import io.github.fakegeo.environment.EnvironmentSnapshot;
 import io.github.fakegeo.environment.EnvironmentStore;
 import io.github.fakegeo.root.RootProfilePublisher;
@@ -29,13 +37,14 @@ import org.json.JSONObject;
 
 /** Captures a place once, then applies the filtered anchors without typing a single MAC. */
 public final class EnvironmentActivity extends Activity {
-    private static final int REQUEST_CAPTURE = 71;
+    private static final int REQUEST_CAPTURE = 71, REQUEST_IMPORT_FILE = 72, REQUEST_EXPORT_FILE = 73;
     private LinearLayout list;
-    private TextView status, active;
-    private Button captureButton, importButton, exportButton, stopButton;
+    private TextView status, active, libraryCount;
+    private Button captureButton, finishCaptureButton, cancelCaptureButton, importButton, importFileButton,
+            exportButton, exportFileButton, stopButton;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private EnvironmentCapture session;
-    private boolean pendingCapture, busy;
+    private boolean pendingCapture, busy, foreground;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -60,25 +69,51 @@ public final class EnvironmentActivity extends Activity {
         status.setPadding(0, dp(8), 0, 0);
         body.addView(status);
         captureButton = action(body, "采集当前环境", true, this::capture);
+        finishCaptureButton = action(body, "完成采集并保存", false, this::finishCapture);
+        cancelCaptureButton = action(body, "取消采集", false, this::cancelCapture);
+        finishCaptureButton.setVisibility(android.view.View.GONE);
+        cancelCaptureButton.setVisibility(android.view.View.GONE);
         stopButton = action(body, "停止虚拟环境", false, () -> stopEnvironment(false));
-        text(body, "采集只在前台运行约 22 秒：Wi-Fi 采样 3 次、蓝牙 14 秒、小区 2 次，结束后自动停止，不做后台扫描。采集前请先停止虚拟环境。", 13, UiKit.MUTED);
+        text(body, "采集只在前台运行约 22 秒：Wi-Fi 采样 3 次、蓝牙 14 秒、小区 2 次，结束后自动停止，不做后台扫描。采集中可以提前完成或取消；离开此页面会立即停止采集。采集前请先停止虚拟环境。", 13, UiKit.MUTED);
         text(body, "BLE 多设备回放只在应用兼容模式生效；系统模式下回放 Wi-Fi 与小区，蓝牙仍保持隔离。", 13, UiKit.MUTED);
 
         section(body, "已保存环境");
+        libraryCount = UiKit.text(this, "", 13, UiKit.MUTED, false);
+        libraryCount.setPadding(0, 0, 0, dp(6));
+        body.addView(libraryCount);
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         body.addView(list);
 
         section(body, "导入与导出");
         importButton = action(body, "从剪贴板导入环境 JSON", false, this::importClipboard);
+        importFileButton = action(body, "从文件导入环境 JSON", false, this::importFile);
         exportButton = action(body, "复制整个环境库到剪贴板", false, this::exportClipboard);
-        text(body, "环境 JSON 包含坐标、Wi-Fi、蓝牙广播和小区字段，可直接在设备之间迁移。应用环境会同时启用对应的模拟开关。", 13, UiKit.MUTED);
+        exportFileButton = action(body, "导出环境库到文件", false, this::exportFile);
+        text(body, "环境 JSON 包含坐标、Wi-Fi、蓝牙广播和小区字段，可直接在设备之间迁移；文件方式适合备份整个环境库。应用环境会同时启用对应的模拟开关。", 13, UiKit.MUTED);
         refresh();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        foreground = true;
     }
 
     @Override protected void onResume() {
         super.onResume();
         if (list != null) refresh();
+    }
+
+    @Override protected void onStop() {
+        foreground = false;
+        if (session != null && !pendingCapture) {
+            session.cancel();
+            session = null;
+            setBusy(false);
+            setCaptureControls(false);
+            status("采集已取消：采集只在前台运行，请保持此页面打开后重试");
+        }
+        super.onStop();
     }
 
     @Override protected void onDestroy() {
@@ -101,6 +136,7 @@ public final class EnvironmentActivity extends Activity {
     }
 
     private void beginCapture() {
+        if (!foreground) { status("采集只在前台运行，请返回此页面后重试"); return; }
         String missing = EnvironmentCapture.missingPermission(this);
         if (missing != null) {
             pendingCapture = true;
@@ -110,27 +146,56 @@ public final class EnvironmentActivity extends Activity {
         }
         pendingCapture = false;
         setBusy(true);
+        setCaptureControls(true);
         session = new EnvironmentCapture(this, new EnvironmentCapture.Listener() {
             @Override public void progress(String message) { if (!isDestroyed()) status(message); }
             @Override public void finished(EnvironmentSnapshot snapshot) {
                 session = null;
                 if (isDestroyed()) return;
                 setBusy(false);
+                setCaptureControls(false);
                 saveCaptured(snapshot);
             }
             @Override public void failed(String message) {
                 session = null;
                 if (isDestroyed()) return;
-                setBusy(false); status(message); toast(message);
+                setBusy(false);
+                setCaptureControls(false);
+                status(message); toast(message);
             }
         });
         session.start();
+    }
+
+    private void finishCapture() {
+        if (session == null) return;
+        finishCaptureButton.setEnabled(false);
+        cancelCaptureButton.setEnabled(false);
+        status("正在结束采集并清洗锚点…");
+        session.finishNow();
+    }
+
+    private void cancelCapture() {
+        if (session == null) return;
+        session.cancel();
+        session = null;
+        setBusy(false);
+        setCaptureControls(false);
+        status("采集已取消，未保存任何数据");
+    }
+
+    private void setCaptureControls(boolean active) {
+        finishCaptureButton.setVisibility(active ? android.view.View.VISIBLE : android.view.View.GONE);
+        cancelCaptureButton.setVisibility(active ? android.view.View.VISIBLE : android.view.View.GONE);
+        finishCaptureButton.setEnabled(active);
+        cancelCaptureButton.setEnabled(active);
     }
 
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(request, permissions, grants);
         if (request != REQUEST_CAPTURE || !pendingCapture) return;
         pendingCapture = false;
+        if (!foreground) { setBusy(false); status("权限已授予；采集只在前台运行，请返回页面后重试"); return; }
         if (EnvironmentCapture.missingPermission(this) == null) beginCapture();
         else { setBusy(false); status("采集所需的定位、蓝牙或附近的 Wi-Fi 设备权限未授予"); }
     }
@@ -149,6 +214,8 @@ public final class EnvironmentActivity extends Activity {
         body.setPadding(dp(20), dp(8), dp(20), dp(4));
         body.addView(UiKit.text(this, snapshot.summary(), 14, UiKit.MUTED, false));
         body.addView(UiKit.text(this, locationText(snapshot), 14, UiKit.MUTED, false));
+        if (EnvironmentStore.all(this).size() >= EnvironmentStore.MAX_ENVIRONMENTS)
+            body.addView(UiKit.text(this, "环境库已满，保存后会自动移除最旧的一项。", 13, UiKit.DANGER, false));
         body.addView(name, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("采集完成")
@@ -159,16 +226,20 @@ public final class EnvironmentActivity extends Activity {
                 .create();
         dialog.setOnShowListener(shown -> {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                EnvironmentSnapshot saved = snapshot.renamed(name.getText().toString());
-                EnvironmentStore.save(this, saved);
-                dialog.dismiss();
-                publish(saved);
+                try {
+                    EnvironmentSnapshot saved = snapshot.renamed(name.getText().toString());
+                    EnvironmentStore.save(this, saved);
+                    dialog.dismiss();
+                    publish(saved);
+                } catch (Exception failure) { toast("保存失败：" + failureText(failure)); }
             });
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-                EnvironmentStore.save(this, snapshot.renamed(name.getText().toString()));
-                dialog.dismiss();
-                refresh();
-                toast("环境已保存，可随时应用");
+                try {
+                    EnvironmentStore.save(this, snapshot.renamed(name.getText().toString()));
+                    dialog.dismiss();
+                    refresh();
+                    toast("环境已保存，可随时应用");
+                } catch (Exception failure) { toast("保存失败：" + failureText(failure)); }
             });
         });
         dialog.show();
@@ -185,6 +256,9 @@ public final class EnvironmentActivity extends Activity {
                     + (current.hasLocation ? "\n坐标 " + locationText(current) : "\n未绑定坐标"));
         list.removeAllViews();
         List<EnvironmentSnapshot> items = EnvironmentStore.all(this);
+        if (libraryCount != null) libraryCount.setText(items.size() + " / " + EnvironmentStore.MAX_ENVIRONMENTS
+                + " 个环境" + (items.size() >= EnvironmentStore.MAX_ENVIRONMENTS
+                ? " · 已满，保存或导入新环境时会移除最旧的一项" : ""));
         if (items.isEmpty()) {
             TextView empty = UiKit.text(this, "还没有保存的环境。先停止虚拟环境，再采集公司或目标场所的真实无线指纹。", 14, UiKit.MUTED, false);
             empty.setPadding(0, dp(8), 0, dp(8));
@@ -281,15 +355,18 @@ public final class EnvironmentActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("重命名环境")
                 .setView(name)
                 .setPositiveButton("保存", (dialog, which) -> {
-                    EnvironmentStore.save(this, item.renamed(name.getText().toString()));
-                    refresh();
+                    try { EnvironmentStore.save(this, item.renamed(name.getText().toString())); refresh(); }
+                    catch (Exception failure) { toast("重命名失败：" + failureText(failure)); }
                 }).setNegativeButton("取消", null).show();
     }
 
     private void confirmDelete(EnvironmentSnapshot item) {
         new AlertDialog.Builder(this).setTitle("删除环境")
                 .setMessage("删除“" + item.name + "”？当前已发布的环境不会立即改变，但下次应用前无法再选择它。")
-                .setPositiveButton("删除", (dialog, which) -> { EnvironmentStore.delete(this, item.id); refresh(); })
+                .setPositiveButton("删除", (dialog, which) -> {
+                    try { EnvironmentStore.delete(this, item.id); refresh(); }
+                    catch (Exception failure) { toast("删除失败：" + failureText(failure)); }
+                })
                 .setNegativeButton("取消", null).show();
     }
 
@@ -380,17 +457,130 @@ public final class EnvironmentActivity extends Activity {
         ClipData clip = clipboard == null ? null : clipboard.getPrimaryClip();
         String value = clip == null || clip.getItemCount() == 0 ? "" : String.valueOf(clip.getItemAt(0).coerceToText(this));
         if (value.trim().isEmpty()) { toast("剪贴板中没有环境 JSON"); return; }
+        importValue(value);
+    }
+
+    private void importValue(String value) {
         try {
-            int count = EnvironmentStore.importText(this, value);
+            EnvironmentStore.ImportResult result = EnvironmentStore.importText(this, value);
             refresh();
-            toast(count == 0 ? "没有识别到有效环境" : "已导入 " + count + " 个环境");
-        } catch (Exception failure) { toast("导入失败：" + failure.getMessage()); }
+            String message = importMessage(result);
+            status(message);
+            toast(message);
+        } catch (Exception failure) {
+            String message = "导入失败：" + failureText(failure);
+            status(message);
+            toast(message);
+        }
+    }
+
+    private void importFile() {
+        if (busy) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream"});
+        try { startActivityForResult(intent, REQUEST_IMPORT_FILE); }
+        catch (RuntimeException unavailable) { toast("没有可用的文件选择器"); }
     }
 
     private void exportClipboard() {
         List<EnvironmentSnapshot> items = EnvironmentStore.all(this);
         if (items.isEmpty()) { toast("环境库为空"); return; }
         copy(EnvironmentStore.exportAll(this), "环境库 JSON 已复制（" + items.size() + " 个）");
+    }
+
+    private void exportFile() {
+        if (busy) return;
+        if (EnvironmentStore.all(this).isEmpty()) { toast("环境库为空"); return; }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "environments-" + new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + ".json");
+        try { startActivityForResult(intent, REQUEST_EXPORT_FILE); }
+        catch (RuntimeException unavailable) { toast("没有可用的文件保存器"); }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (result != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        if (request == REQUEST_IMPORT_FILE) readImportFile(uri);
+        else if (request == REQUEST_EXPORT_FILE) writeExportFile(uri);
+    }
+
+    private void readImportFile(Uri uri) {
+        if (busy) return;
+        setBusy(true);
+        status("正在读取环境文件…");
+        worker.execute(() -> {
+            String content = null, error = null;
+            try { content = readUtf8(uri); }
+            catch (Exception failure) { error = failureText(failure); }
+            String text = content, failure = error;
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                setBusy(false);
+                if (failure != null) {
+                    String message = "读取失败：" + failure;
+                    status(message);
+                    toast(message);
+                } else importValue(text);
+            });
+        });
+    }
+
+    private void writeExportFile(Uri uri) {
+        if (busy) return;
+        setBusy(true);
+        status("正在写入环境文件…");
+        worker.execute(() -> {
+            String error = null;
+            try {
+                String json = EnvironmentStore.exportAll(this);
+                try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (output == null) throw new IOException("无法打开目标文件");
+                    output.write(json.getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (Exception failure) { error = failureText(failure); }
+            String failure = error;
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                setBusy(false);
+                String message = failure == null ? "环境库已导出到文件" : "导出失败：" + failure;
+                status(message);
+                toast(message);
+            });
+        });
+    }
+
+    private String readUtf8(Uri uri) throws IOException {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("无法打开文件");
+            ByteArrayOutputStream data = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int count, total = 0;
+            while ((count = input.read(chunk)) != -1) {
+                total += count;
+                if (total > EnvironmentImport.MAX_TEXT_CHARS) throw new IOException("文件超过 512 KB");
+                data.write(chunk, 0, count);
+            }
+            return data.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
+    private static String importMessage(EnvironmentStore.ImportResult result) {
+        if (!result.changedAnything()) return "没有可写入的环境";
+        StringBuilder message = new StringBuilder(result.added > 0
+                ? "已导入 " + result.added + " 个环境" : "已更新 " + result.replaced + " 个环境");
+        if (result.added > 0 && result.replaced > 0) message.append("，更新 ").append(result.replaced).append(" 个");
+        if (result.rejected > 0) message.append("，忽略 ").append(result.rejected).append(" 条无效数据");
+        if (result.evicted > 0) message.append("；环境库上限 ").append(EnvironmentStore.MAX_ENVIRONMENTS)
+                .append(" 个，移除最旧 ").append(result.evicted).append(" 个");
+        return message.toString();
+    }
+
+    private static String failureText(Exception failure) {
+        String message = failure.getMessage();
+        return message == null || message.trim().isEmpty() ? failure.getClass().getSimpleName() : message;
     }
 
     private void copy(String value, String message) {
@@ -422,8 +612,12 @@ public final class EnvironmentActivity extends Activity {
         if (value) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (captureButton != null) captureButton.setEnabled(!value);
+        if (finishCaptureButton != null) finishCaptureButton.setEnabled(!value);
+        if (cancelCaptureButton != null) cancelCaptureButton.setEnabled(!value);
         if (importButton != null) importButton.setEnabled(!value);
+        if (importFileButton != null) importFileButton.setEnabled(!value);
         if (exportButton != null) exportButton.setEnabled(!value);
+        if (exportFileButton != null) exportFileButton.setEnabled(!value);
         if (stopButton != null) stopButton.setEnabled(!value);
     }
     private void section(LinearLayout body, String title) {

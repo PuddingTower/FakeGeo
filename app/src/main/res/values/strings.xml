@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_name">拟境快捷开关</string>
+    <string name="widget_title">拟境</string>
+    <string name="widget_description">查看当前虚拟位置，快速开关定位、Wi-Fi、蓝牙和基站回放。</string>
+</resources>

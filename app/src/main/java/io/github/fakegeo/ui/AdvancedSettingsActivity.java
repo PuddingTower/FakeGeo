@@ -2,6 +2,8 @@ package io.github.fakegeo.ui;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.appwidget.AppWidgetManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -53,6 +55,9 @@ public final class AdvancedSettingsActivity extends Activity {
         section("环境指纹");
         button("环境采集与指纹库", () -> startActivity(new Intent(this, EnvironmentActivity.class)));
         text("在目标场所采集一次 Wi-Fi、蓝牙和小区，清洗后自动填入锚点；不再需要手写 MAC。采集只在前台进行约 22 秒，不做后台扫描。", 13, UiKit.MUTED);
+        section("桌面卡片");
+        button("添加桌面快捷卡片", this::pinWidget);
+        text("4×3 大卡片显示当前坐标、环境与运行状态，可直接切换总开关和定位、Wi-Fi、蓝牙、基站；小开关只改配置，不会自动打开总开关。部分桌面不支持一键添加时，请长按桌面从小组件列表添加。", 13, UiKit.MUTED);
         section("系统与授权");
         text(MainActivity.moduleActive() ? "LSPosed 已注入模块界面" : "请在 LSPosed 启用模块；界面未被注入不代表目标 App 未生效。", 14, UiKit.MUTED);
         text("Android 10–16 · 系统服务 Hook\n在 LSPosed 中选择 Android 系统／系统框架、电话服务、蓝牙与 Wi-Fi 服务；一加／ColorOS 还需勾选 Oplus 定位与高通定位服务（列表里没有就是本机没有该组件）。首次启用或改动作用域后重启手机。\n蓝牙信标注入、高德结果清洗与调用栈隐藏只在应用兼容模式下生效：需要把目标应用同时加入作用域，并关闭系统模式。", 14, UiKit.MUTED);
@@ -137,9 +142,11 @@ public final class AdvancedSettingsActivity extends Activity {
         updateButton = UiKit.button(this, "检查更新", false); LinearLayout.LayoutParams updateLayout = new LinearLayout.LayoutParams(-1, dp(50)); updateLayout.topMargin=dp(8); content.addView(updateButton, updateLayout);
         updateButton.setOnClickListener(v -> checkUpdate());
         section("关于");
-        text("拟境 · 免费开源\n作者：" + AppInfo.AUTHOR + "\n版本：" + io.github.fakegeo.config.ModuleVersion.CURRENT, 14, UiKit.INK);
+        text("拟境 · 免费开源\n作者：" + AppInfo.AUTHOR + "\n更新来源：" + AppInfo.REPOSITORY_SLUG
+                + "\n上游项目：myxuebi/FakeGeo\n版本：" + io.github.fakegeo.config.ModuleVersion.CURRENT, 14, UiKit.INK);
         TextView source = UiKit.text(this, AppInfo.REPOSITORY, 14, UiKit.ACCENT, false); source.setTextIsSelectable(true); source.setPadding(0,dp(12),0,dp(12)); source.setOnClickListener(v -> openLink(AppInfo.REPOSITORY)); content.addView(source);
         button("查看源代码", () -> openLink(AppInfo.REPOSITORY));
+        button("访问上游项目", () -> openLink(AppInfo.UPSTREAM));
         button("使用说明与免责声明", () -> NoticeDialog.show(this, false, () -> {}));
         button("重新查看初始引导", () -> startActivity(new Intent(this, OnboardingActivity.class)));
         if (state != null) {
@@ -164,7 +171,7 @@ public final class AdvancedSettingsActivity extends Activity {
             json.put("locationCacheTarget", cacheTarget);
             json.put("revision", nextRevision());
             Profile p = new Profile(json);
-            for (String target : p.targets) {
+            if (!p.systemMode) for (String target : p.targets) {
                 try { getPackageManager().getApplicationInfo(target, 0); }
                 catch (android.content.pm.PackageManager.NameNotFoundException absent) { throw new IllegalArgumentException("请先安装目标应用：" + target); }
             }
@@ -325,6 +332,21 @@ public final class AdvancedSettingsActivity extends Activity {
         }
         cacheSelection.setText(label);
     }
+    private void pinWidget() {
+        try {
+            AppWidgetManager manager = AppWidgetManager.getInstance(this);
+            if (!manager.isRequestPinAppWidgetSupported()) {
+                Toast.makeText(this,"当前桌面不支持一键添加，请长按桌面手动添加",Toast.LENGTH_LONG).show();
+                return;
+            }
+            ComponentName provider = new ComponentName(this, io.github.fakegeo.widget.LocationWidgetProvider.class);
+            if (!manager.requestPinAppWidget(provider, null, null))
+                Toast.makeText(this,"未能发起添加，请长按桌面手动添加",Toast.LENGTH_LONG).show();
+        } catch (RuntimeException failure) {
+            Toast.makeText(this,"添加卡片失败：" + failure.getClass().getSimpleName(),Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void chooseCacheApp() {
         ArrayList<ApplicationInfo> apps = new ArrayList<>();
         for (ApplicationInfo app : getPackageManager().getInstalledApplications(0)) {

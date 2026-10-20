@@ -22,9 +22,18 @@ public class GitHubUpdateTest {
     @Test public void onlyNewerStableReleasesPromptAndLinksStayInThisRepository() throws Exception {
         GitHubRelease release = new GitHubRelease(new JSONObject().put("tag_name", "v0.3.10").put("html_url", AppInfo.RELEASES + "/tag/v0.3.10"));
         assertTrue(release.newerThan("0.3.4")); assertFalse(release.newerThan("0.3.10")); assertFalse(release.newerThan("0.4.0"));
+        assertEquals(AppInfo.RELEASES + "/tag/v0.3.10", release.url);
         assertThrows(IllegalArgumentException.class, () -> new GitHubRelease(new JSONObject().put("tag_name", "v1.0.0").put("prerelease", true)));
         GitHubRelease foreign = new GitHubRelease(new JSONObject().put("tag_name", "v1.0.0").put("html_url", "https://github.com.evil.example/update"));
         assertEquals(AppInfo.RELEASES, foreign.url);
+        GitHubRelease upstream = new GitHubRelease(new JSONObject().put("tag_name", "v1.0.0")
+                .put("html_url", "https://github.com/myxuebi/FakeGeo/releases/tag/v1.0.0"));
+        assertEquals(AppInfo.RELEASES, upstream.url);
+    }
+
+    @Test public void updateEndpointTargetsTheRepositoryThatPublishesThisBuild() {
+        assertTrue(GitHubUpdateClient.ENDPOINT.contains("/" + AppInfo.REPOSITORY_SLUG + "/"));
+        assertTrue(AppInfo.RELEASES.startsWith("https://github.com/" + AppInfo.REPOSITORY_SLUG + "/"));
     }
     @Test public void missingReleaseAndRateLimitAreErrorsNotUpToDate() throws Exception {
         IOException missing = assertThrows(IOException.class, () -> GitHubUpdateClient.read(new Response(404, "{}")));
